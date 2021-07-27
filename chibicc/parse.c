@@ -18,25 +18,6 @@
 
 #include "chibicc.h"
 
-// Scope for local variables, global variables, typedefs
-// or enum constants
-typedef struct {
-  Obj *var;
-  Type *type_def;
-  Type *enum_ty;
-  int enum_val;
-} VarScope;
-
-// Represents a block scope.
-typedef struct Scope Scope;
-struct Scope {
-  Scope *next;
-
-  // C has two block scopes; one is for variables/typedefs and
-  // the other is for struct/union/enum tags.
-  HashMap vars;
-  HashMap tags;
-};
 
 // Variable attributes such as typedef or extern.
 typedef struct {
@@ -88,6 +69,7 @@ static Obj *locals;
 static Obj *globals;
 
 static Scope *scope = &(Scope){};
+Scope* globalScope = 0;
 
 // Points to the function object the parser is currently parsing.
 static Obj *current_fn;
@@ -164,6 +146,8 @@ static void enter_scope(void) {
   Scope *sc = calloc(1, sizeof(Scope));
   sc->next = scope;
   scope = sc;
+  if( globalScope == 0 )
+    globalScope = sc;
 }
 
 static void leave_scope(void) {
@@ -3337,6 +3321,7 @@ static void declare_builtin_functions(void) {
 Obj *parse(Token *tok) {
   declare_builtin_functions();
   globals = NULL;
+  globalScope = scope;
 
   while (tok->kind != TK_EOF) {
     VarAttr attr = {};

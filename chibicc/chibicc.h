@@ -445,6 +445,28 @@ void hashmap_delete(HashMap *map, char *key);
 void hashmap_delete2(HashMap *map, char *key, int keylen);
 void hashmap_test(void);
 
+// Scope for local variables, global variables, typedefs
+// or enum constants
+typedef struct {
+  Obj *var;
+  Type *type_def;
+  Type *enum_ty;
+  int enum_val;
+} VarScope;
+
+// Represents a block scope.
+typedef struct Scope Scope;
+struct Scope {
+  Scope *next;
+
+  // C has two block scopes; one is for variables/typedefs and
+  // the other is for struct/union/enum tags.
+  HashMap vars; // val = VarScope*
+  HashMap tags; // val = Type* (struct/union/enum)
+};
+
+extern Scope* globalScope;
+
 //
 // main.c
 //
