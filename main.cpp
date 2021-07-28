@@ -581,9 +581,9 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
     case TY_PTR:
         if( t->base->kind != TY_FUNC )
             out << "*";
-        if( t->base->kind == TY_STRUCT && t->base->members == 0 )
-            out << "void"; // pointer to opaque struct
-        else
+        //if( t->base->kind == TY_STRUCT && t->base->members == 0 )
+        //    out << "void"; // pointer to opaque struct
+        //else
         {
             // if( isBaseType(t->base) && t->base->kind != TY_VOID ) // too broad; there are a lot of cases there *int is a return value
             // on the other hand there are even *cstruct which are actually arrays; this needs manual correction after generation
@@ -649,7 +649,10 @@ static void renderModule()
     }else
         qDebug() << "generating" << f.fileName();
     QTextStream out(&f);
-    out << "definition " << escape(modName) << endl;
+    out << "definition " << escape(modName) << " [";
+    if( !modName.isEmpty() )
+        out << "pfx '" << modName << "_'"; // prefix, the string to be prefixed to proc names to find them in the library
+    out << "]" << endl;
 
     QMap<QByteArray,Decls>::const_iterator i;
 
