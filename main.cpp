@@ -521,11 +521,13 @@ static bool renderEnum(QTextStream& out, Type* t, int level)
     if( trueEnum )
     {
         out << "(";
-        for(i = 0; i < et.items.size(); i++ )
+        QMultiMap<int,const EnumItem*>::const_iterator i;
+        int done = 0;
+        for( i = itemsByVal.begin(); i != itemsByVal.end(); ++i )
         {
-            if( i != 0 )
+            if( done++ )
                 out << ", ";
-            out << escape(defix(et.items[i].name));
+            out << escape(defix(i.value()->name));
         }
         out << ")";
         return false;
