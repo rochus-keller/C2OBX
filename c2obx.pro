@@ -22,3 +22,5 @@ SOURCES += main.cpp \
 
 HEADERS += \
     chibicc/chibicc.h
+
+include(./Testdaten/sdl2/SDL2.pri)

@@ -97,9 +97,34 @@ static QByteArray escape( const QByteArray& name )
 }
 
 static void renderParams(QTextStream& out, Type* func );
+static void renderTypeDecl(QTextStream &out, Type *t, int level);
 
-static void renderType( QTextStream& out, Type* t )
+static inline bool isBaseType(Type* t)
 {
+    switch( t->kind )
+    {
+    case TY_BOOL:
+    case TY_CHAR:
+    case TY_SHORT:
+    case TY_INT:
+    case TY_LONG:
+    case TY_FLOAT:
+    case TY_DOUBLE:
+    case TY_LDOUBLE:
+    case TY_VOID:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static void renderTypeName( QTextStream& out, Type* t, int level = 0 )
+{
+    if( isBaseType(t) )
+    {
+        renderTypeDecl(out,t,level);
+        return;
+    }
     usedTypes.insert(t);
     QByteArray typeName = typeNames.value(t);
     if( typeName.isEmpty() )
@@ -111,50 +136,8 @@ static void renderType( QTextStream& out, Type* t )
     }
     if( !typeName.isEmpty() )
         out << escape(defix(typeName));
-
-    if( typeName.isEmpty() )
-    {
-        switch(t->kind)
-        {
-        case TY_BOOL: out << "boolean"; break;
-        case TY_CHAR: out << "char"; break;
-        case TY_SHORT: out << "shortint"; break;
-        case TY_INT: out << "integer"; break;
-        case TY_LONG: out << "longint"; break; // TODO
-        case TY_FLOAT: out << "real "; break;
-        case TY_DOUBLE: out << "longreal "; break;
-        case TY_LDOUBLE: out << "longreal "; break; // TODO
-        case TY_VOID: out << "void "; break;
-#if 0
-        case TY_PTR: out << "PTR "; break;
-        case TY_ARRAY: out << "ARRAY "; break;
-        case TY_FUNC: out << "FUNC "; break;
-#else
-        case TY_PTR:
-            if( t->base->kind != TY_FUNC )
-                out << "*";
-            renderType(out,t->base);
-            break;
-        case TY_ARRAY:
-            out << "[]";
-            renderType(out,t->base);
-            break;
-        case TY_FUNC:
-            out << "proc";
-            renderParams(out,t);
-            break;
-
-#endif
-#if 0
-        case TY_ENUM: out << "ENUM "; break;
-        case TY_VLA: out << "VLA "; break;
-        case TY_STRUCT: out << "STRUCT "; break;
-        case TY_UNION: out << "UNION "; break;
-#endif
-        default:
-            out << "???";
-        }
-    }
+    else
+        renderTypeDecl(out,t,level);
 
 #if 0
     renderFilePos(t->name_pos);
@@ -240,13 +223,13 @@ static void printFunction( QTextStream& out, Obj* var )
             out << ", ";
         if( p->name_pos )
             out << QByteArray::fromRawData(p->name_pos->loc,p->name_pos->len) << ": ";
-        renderType(out,p);
+        renderTypeName(out,p);
         p = p->next;
     }
     out << ")";
     Q_ASSERT( var->ty->return_ty );
     out << ": ";
-    renderType(out,var->ty->return_ty);
+    renderTypeName(out,var->ty->return_ty);
 }
 
 static inline void registerFunction(Obj* o)
@@ -301,7 +284,7 @@ static void renderTok( QTextStream& out, Token* cur, int level = 0 )
     }
     out << QByteArray(cur->loc).mid(0,cur->len) << " ";
     if( cur->ty )
-        renderType(out, cur->ty);
+        renderTypeName(out, cur->ty);
     out << endl;
 }
 
@@ -461,7 +444,7 @@ static void renderParams(QTextStream& out, Type* func )
         if( !validName(name) )
             name = "_" + QByteArray::number(nr);
         out << escape(name) << ": ";
-        renderType(out,p);
+        renderTypeName(out,p);
         p = p->next;
         nr++;
     }
@@ -471,7 +454,7 @@ static void renderParams(QTextStream& out, Type* func )
     if( r )
     {
         out << ": ";
-        renderType(out,r);
+        renderTypeName(out,r);
     }
 }
 
@@ -504,9 +487,6 @@ static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
 {
     switch( t->kind )
     {
-    case TY_ENUM:
-        renderEnum(out,t,level);
-        break;
     case TY_BOOL:
         out << "boolean";
         break;
@@ -531,29 +511,55 @@ static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
     case TY_LDOUBLE:
         out << "longreal"; // TODO
         break;
+    case TY_VOID:
+        out << "void";
+        break;
+    case TY_PTR:
+        if( t->base->kind != TY_FUNC )
+            out << "*";
+        if( t->base->kind == TY_STRUCT && t->base->members == 0 )
+            out << "void"; // pointer to opaque struct
+        else
+            renderTypeName(out,t->base,level);
+        break;
+    case TY_ARRAY:
+        out << "carray ";
+        if( t->array_len )
+            out << t->array_len << " ";
+        out << "of ";
+        renderTypeName(out,t->base,level);
+        break;
     case TY_FUNC:
         out << "proc";
         renderParams(out,t);
         break;
-    case TY_PTR:
-        out << "*";
-        renderTypeDecl(out,t->base,level);
-        break;
-    case TY_ARRAY:
-        out << "carray of ";
-        renderTypeDecl(out,t->base,level);
+    case TY_ENUM:
+        renderEnum(out,t,level);
         break;
     case TY_STRUCT:
-        out << "cstruct end"; // TODO
-        break;
     case TY_UNION:
-        out << "cunion end"; // TODO
-        break;
-    case TY_VOID:
-        out << "void";
+        {
+            if( t->kind == TY_STRUCT )
+                out << "cstruct";
+            else
+                out << "cunion";
+            Member* member = t->members;
+            while( member )
+            {
+                out << endl << ws(level+1);
+                QByteArray name = QByteArray::fromRawData(member->name->loc, member->name->len);
+                if( member->is_bitfield )
+                    qWarning() << "bitfields not supported:" << name << renderFilePos(member->name);
+                out << escape(name) << ": ";
+                renderTypeName(out,member->ty );
+                member = member->next;
+            }
+            out << " end";
+        }
         break;
     case TY_VLA:
-        Q_ASSERT( false );
+        qWarning() << "VLA not supported:" << renderFilePos(t->name_pos);
+        break;
     }
 }
 
@@ -585,8 +591,8 @@ static void renderModule()
         for( k = i.value().types.begin(); k != i.value().types.end(); ++k )
         {
             Type* t = k.value();
-            if( !enumTypes.contains(t) && !usedTypes.contains(t) )
-                continue;
+            //if( !enumTypes.contains(t) && !usedTypes.contains(t) )
+            //    continue;
             if( !headerDone )
             {
                 out << "    type" << endl;
