@@ -1,4 +1,4 @@
-// added by rochus
+// added by rochus, just a subset of the GCC stdint.h
 
 typedef signed char		int8_t;
 typedef short int		int16_t;

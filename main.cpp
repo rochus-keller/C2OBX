@@ -1,3 +1,22 @@
+/*
+* Copyright 2021 Rochus Keller <mailto:me@rochus-keller.ch>
+*
+* This file is part of the Oberon+ parser/compiler library.
+*
+* The following is the license that applies to this copy of the
+* library. For a license to use the library under conditions
+* other than those described here, please email to me@rochus-keller.ch.
+*
+* GNU General Public License Usage
+* This file may be used under the terms of the GNU General Public
+* License (GPL) versions 2.0 or 3.0 as published by the Free Software
+* Foundation and appearing in the file LICENSE.GPL included in
+* the packaging of this file. Please review the following information
+* to ensure GNU General Public Licensing requirements will be met:
+* http://www.fsf.org/licensing/licenses/info/GPLv2.html and
+* http://www.gnu.org/copyleft/gpl.html.
+*/
+
 #include <QCoreApplication>
 #include <QFileInfo>
 #include <QStringList>
@@ -97,7 +116,7 @@ static QByteArray escape( const QByteArray& name )
 }
 
 static void renderParams(QTextStream& out, Type* func );
-static void renderTypeDecl(QTextStream &out, Type *t, int level);
+static bool renderTypeDecl(QTextStream &out, Type *t, int level);
 
 static inline bool isBaseType(Type* t)
 {
@@ -468,30 +487,73 @@ static inline QByteArray getTypeName(Type* t)
     return typeName;
 }
 
-static void renderEnum(QTextStream& out, Type* t, int level)
-{
-    const EnumType& et = enumTypes[t];
-    out << "(";
-    for(int i = 0; i < et.items.size(); i++ )
-    {
-        if( i != 0 )
-            out << ", ";
-        out << escape(defix(et.items[i].name));
-    }
-    out << ")";
-}
-
 static inline QByteArray ws(int level) { return QByteArray(level*4,' '); }
 
-static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
+static bool renderEnum(QTextStream& out, Type* t, int level)
+{
+    const EnumType& et = enumTypes[t];
+    if( et.items.isEmpty() )
+    {
+        out << "()";
+        return false;
+    }
+
+    QMultiMap<int,const EnumItem*> itemsByVal;
+    QMap<QByteArray,const EnumItem*> itemsByName;
+    for(int i = 0; i < et.items.size(); i++ )
+    {
+        itemsByVal.insert(et.items[i].value, &et.items[i] );
+        itemsByName.insert(et.items[i].name, &et.items[i] );
+    }
+
+    int i = 0;
+    bool trueEnum = true;
+    QMultiMap<int,const EnumItem*>::const_iterator j = itemsByVal.begin();
+    for( j = itemsByVal.begin(); j != itemsByVal.end(); ++j, i++ )
+    {
+        if( j.key() != i )
+        {
+            trueEnum = false;
+            break;
+        }
+    }
+
+    if( trueEnum )
+    {
+        out << "(";
+        for(i = 0; i < et.items.size(); i++ )
+        {
+            if( i != 0 )
+                out << ", ";
+            out << escape(defix(et.items[i].name));
+        }
+        out << ")";
+        return false;
+    }else
+    {
+        out << "integer" << endl;
+        out << ws(level-2) << "const" << endl;
+        QMap<QByteArray,const EnumItem*>::const_iterator i;
+        for( i = itemsByName.begin(); i != itemsByName.end(); ++i )
+            out << ws(level-1) << escape(defix(i.key())) << " = " << i.value()->value << endl;
+        //out << ws(level-2) << "type";
+        return true;
+    }
+}
+
+static bool renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
 {
     switch( t->kind )
     {
+    // TODO: unsigned
     case TY_BOOL:
         out << "boolean";
         break;
     case TY_CHAR:
-        out << "char";
+        if( t->is_unsigned )
+            out << "byte";
+        else
+            out << "char";
         break;
     case TY_SHORT:
         out << "shortint";
@@ -500,7 +562,7 @@ static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
         out << "integer";
         break;
     case TY_LONG:
-        out << "longint"; // TODO
+        out << "integer";
         break;
     case TY_FLOAT:
         out << "real";
@@ -520,7 +582,13 @@ static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
         if( t->base->kind == TY_STRUCT && t->base->members == 0 )
             out << "void"; // pointer to opaque struct
         else
+        {
+            // if( isBaseType(t->base) && t->base->kind != TY_VOID ) // too broad; there are a lot of cases there *int is a return value
+            // on the other hand there are even *cstruct which are actually arrays; this needs manual correction after generation
+            if( t->base->kind == TY_CHAR )
+                out << "carray of ";
             renderTypeName(out,t->base,level);
+        }
         break;
     case TY_ARRAY:
         out << "carray ";
@@ -534,7 +602,7 @@ static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
         renderParams(out,t);
         break;
     case TY_ENUM:
-        renderEnum(out,t,level);
+        return renderEnum(out,t,level);
         break;
     case TY_STRUCT:
     case TY_UNION:
@@ -561,6 +629,7 @@ static void renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
         qWarning() << "VLA not supported:" << renderFilePos(t->name_pos);
         break;
     }
+    return false;
 }
 
 static void renderModule()
@@ -599,7 +668,7 @@ static void renderModule()
                 headerDone = true;
             }
             out << ws(2) << escape(defix(getTypeName(t))) << " = ";
-            renderTypeDecl(out,t);
+            headerDone = !renderTypeDecl(out,t);
             out << endl;
         }
         if( headerDone )
@@ -621,9 +690,15 @@ static void renderModule()
 int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
+    a.setOrganizationName("Rochus Keller");
+    a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
+    a.setApplicationName("C2OBX");
+    a.setApplicationVersion("2021-07-28");
 
     QTextStream out(stdout);
 
+    out << "C2OBX version: " << a.applicationVersion() <<
+                 " author: me@rochus-keller.ch  license: GPL" << endl;
     QStringList files;
     QByteArrayList includes;
     const QStringList args = QCoreApplication::arguments();
@@ -631,6 +706,8 @@ int main(int argc, char *argv[])
     {
         if(  args[i] == "-h" || args.size() == 1 )
         {
+            out << "usage: C2OBX [options] <c header file>" << endl;
+            out << "  reads a C header and translates it to an Oberon+ module." << endl;
             out << "options:" << endl;
             out << "  -m module     module name" << endl;
             out << "  -Ipath        include path" << endl;
@@ -667,6 +744,7 @@ int main(int argc, char *argv[])
     //printTok(tok);
     tok = preprocess(tok);
     Obj *prog = parse(tok);
+    // never arrives here in case of C errors
     processTypes();
     processFunctions(prog);
     renderModule();
