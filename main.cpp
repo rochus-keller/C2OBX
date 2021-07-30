@@ -543,7 +543,7 @@ static bool renderEnum(QTextStream& out, Type* t, int level)
     }
 }
 
-static bool renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
+static bool renderTypeDecl(QTextStream& out, Type* t, int level )
 {
     switch( t->kind )
     {
@@ -579,16 +579,31 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level = 3 )
         out << "void";
         break;
     case TY_PTR:
-        if( t->base->kind != TY_FUNC )
-            out << "*";
-        //if( t->base->kind == TY_STRUCT && t->base->members == 0 )
-        //    out << "void"; // pointer to opaque struct
-        //else
+        if( t->base->kind == TY_PTR ) // **type
         {
-            // if( isBaseType(t->base) && t->base->kind != TY_VOID ) // too broad; there are a lot of cases there *int is a return value
-            // on the other hand there are even *cstruct which are actually arrays; this needs manual correction after generation
-            if( t->base->kind == TY_CHAR )
-                out << "carray of ";
+            out << "*[]";
+#if 0
+            Type* ptr = t->base->base;
+            while( ptr && ptr->kind == TY_PTR  ) // !isBaseType(ptr->base)
+            {
+                out << "[]";
+                ptr = ptr->base;
+            }
+#endif
+            if( isBaseType(t->base->base) && t->base->base->kind != TY_VOID )
+            {
+                out << "[]";
+                renderTypeDecl(out, t->base->base, level );
+            }else
+                renderTypeDecl(out, t->base, level );
+        }else if( isBaseType(t->base) && t->base->kind != TY_VOID )
+        {
+            out << "*[]";
+            renderTypeName(out,t->base,level);
+        }else
+        {
+            if( t->base->kind != TY_FUNC )
+                out << "*";
             renderTypeName(out,t->base,level);
         }
         break;
@@ -673,7 +688,7 @@ static void renderModule()
                 headerDone = true;
             }
             out << ws(2) << escape(defix(getTypeName(t))) << " = ";
-            headerDone = !renderTypeDecl(out,t);
+            headerDone = !renderTypeDecl(out,t,3);
             out << endl;
         }
         if( headerDone )
