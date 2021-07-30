@@ -582,6 +582,8 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
         if( t->base->kind == TY_PTR ) // **type
         {
             out << "*[]";
+            if( t->base->base->kind == TY_PTR )
+            	qCritical() << "pointers like ***type are not supported";
 #if 0
             Type* ptr = t->base->base;
             while( ptr && ptr->kind == TY_PTR  ) // !isBaseType(ptr->base)
@@ -589,6 +591,9 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
                 out << "[]";
                 ptr = ptr->base;
             }
+#else
+            if( t->base->base->kind == TY_PTR )
+            	qCritical() << "pointers like ***type are not supported";
 #endif
             if( isBaseType(t->base->base) && t->base->base->kind != TY_VOID )
             {
