@@ -235,15 +235,16 @@ static void printFunction( QTextStream& out, Obj* var )
     //renderType(out, var->ty);
     // out << readValue(var->init_data, var->ty ).toString() << " ";
     out << "(";
-    Type* p = var->ty->params;
-    while(p)
+    Type* pt = var->ty->params;
+    while(pt)
     {
-        if( p != var->ty->params )
+        if( pt != var->ty->params )
             out << ", ";
-        if( p->name_pos )
-            out << QByteArray::fromRawData(p->name_pos->loc,p->name_pos->len) << ": ";
-        renderTypeName(out,p);
-        p = p->next;
+        if( pt->name_pos )
+            out << QByteArray::fromRawData(pt->name_pos->loc,pt->name_pos->len) << ": ";
+        renderTypeName(out,pt);
+        out << " " << pt << " " << pt->origin;
+        pt = pt->next;
     }
     out << ")";
     Q_ASSERT( var->ty->return_ty );
@@ -360,8 +361,8 @@ static void processTypes()
         Type* t = (Type*)e->val;
         Q_ASSERT( t->kind == TY_STRUCT || t->kind == TY_UNION || t->kind == TY_ENUM ); // holds in SDL
 #if 0
-        out << "type " << QByteArray::fromRawData(e->key, e->keylen) << " ";
-        renderType(out,t);
+        out << "type " << QByteArray::fromRawData(e->key, e->keylen) << " " << t;
+        renderTypeName(out,t);
         out << endl;
 #endif
         if( t->kind == TY_ENUM )
@@ -413,8 +414,8 @@ static void processTypes()
             }else
             {
 #if 0
-                out << "typedef " << name << " ";
-                renderType(out,vs->type_def);
+                out << "typedef " << name << " " << vs->type_def << " ";
+                renderTypeName(out,vs->type_def);
                 out << endl;
 #endif
             }
@@ -671,7 +672,7 @@ static void renderModule()
     QTextStream out(&f);
     out << "definition " << escape(modName) << " [";
     if( !modName.isEmpty() )
-        out << "pfx '" << modName << "_'"; // prefix, the string to be prefixed to proc names to find them in the library
+        out << "prefix '" << modName << "_'"; // prefix, the string to be prefixed to proc names to find them in the library
     out << "]" << endl;
 
     QMap<QByteArray,Decls>::const_iterator i;
@@ -705,6 +706,8 @@ static void renderModule()
             Obj* func = j.value();
             out << "    proc " << escape(defix(func->name));
             renderParams(out, func->ty);
+            if( func->ty->is_variadic )
+                out << " [varargs]";
             out << endl;
         }
     }
@@ -718,7 +721,7 @@ int main(int argc, char *argv[])
     a.setOrganizationName("Rochus Keller");
     a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
     a.setApplicationName("C2OBX");
-    a.setApplicationVersion("2021-07-28");
+    a.setApplicationVersion("2021-08-02");
 
     QTextStream out(stdout);
 
