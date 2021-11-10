@@ -293,6 +293,7 @@ struct Node {
 Node *new_cast(Node *expr, Type *ty);
 int64_t const_expr(Token **rest, Token *tok);
 Obj *parse(Token *tok);
+Node *expr_checked(Token *tok);
 
 //
 // type.c
@@ -466,6 +467,36 @@ struct Scope {
 };
 
 extern Scope* globalScope;
+
+// preprocess.c
+
+extern HashMap macros;
+
+typedef struct MacroParam MacroParam;
+struct MacroParam {
+  MacroParam *next;
+  char *name;
+};
+
+typedef struct MacroArg MacroArg;
+struct MacroArg {
+  MacroArg *next;
+  char *name;
+  bool is_va_args;
+  Token *tok;
+};
+
+typedef Token *macro_handler_fn(Token *);
+
+typedef struct Macro Macro;
+struct Macro {
+  char *name;
+  bool is_objlike; // Object-like or function-like
+  MacroParam *params;
+  char *va_args_name;
+  Token *body;
+  macro_handler_fn *handler;
+};
 
 //
 // main.c

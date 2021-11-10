@@ -24,32 +24,6 @@
 
 #include "chibicc.h"
 
-typedef struct MacroParam MacroParam;
-struct MacroParam {
-  MacroParam *next;
-  char *name;
-};
-
-typedef struct MacroArg MacroArg;
-struct MacroArg {
-  MacroArg *next;
-  char *name;
-  bool is_va_args;
-  Token *tok;
-};
-
-typedef Token *macro_handler_fn(Token *);
-
-typedef struct Macro Macro;
-struct Macro {
-  char *name;
-  bool is_objlike; // Object-like or function-like
-  MacroParam *params;
-  char *va_args_name;
-  Token *body;
-  macro_handler_fn *handler;
-};
-
 // `#if` can be nested, so we use a stack to manage nested `#if`s.
 typedef struct CondIncl CondIncl;
 struct CondIncl {
@@ -65,7 +39,7 @@ struct Hideset {
   char *name;
 };
 
-static HashMap macros;
+HashMap macros;
 static CondIncl *cond_incl;
 static HashMap pragma_once;
 static int include_next_idx;
@@ -840,7 +814,7 @@ static Token *preprocess2(Token *tok) {
   Token head = {};
   Token *cur = &head;
 
-  while (tok->kind != TK_EOF) {
+  while (tok && tok->kind != TK_EOF) {
     // If it is a macro, expand it.
     if (expand_macro(&tok, tok))
       continue;

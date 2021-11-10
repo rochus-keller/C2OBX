@@ -22,6 +22,7 @@
 #include <QStringList>
 #include <QtDebug>
 #include <QDir>
+#include <QDateTime>
 
 extern "C" {
     #define noreturn
@@ -45,6 +46,56 @@ static const QSet<QByteArray> obxKeywords = QSet<QByteArray>() << "ARRAY" << "TH
                                                                 << "RETURN"<< "DEFINITION"<< "PROC"<< "WITH"
                                                                 << "LOOP"<< "EXIT"<< "OUT"<< "CLOSE"<< "UNSAFE"
                                                                 << "CSTRUCT"<< "CUNION"<< "CARRAY"<< "CPOINTER";
+static const char* s_nodeKind[] = {
+    "ND_NULL_EXPR", // Do nothing
+    "ND_ADD",       // +
+    "ND_SUB",       // -
+    "ND_MUL",       // *
+    "ND_DIV",       // /
+    "ND_NEG",       // unary -
+    "ND_MOD",       // %
+    "ND_BITAND",    // &
+    "ND_BITOR",     // |
+    "ND_BITXOR",    // ^
+    "ND_SHL",       // <<
+    "ND_SHR",       // >>
+    "ND_EQ",        // ==
+    "ND_NE",        // !=
+    "ND_LT",        // <
+    "ND_LE",        // <=
+    "ND_ASSIGN",    // =
+    "ND_COND",      // ?:
+    "ND_COMMA",     // ",
+    "ND_MEMBER",    // . (struct member access)
+    "ND_ADDR",      // unary &
+    "ND_DEREF",     // unary *
+    "ND_NOT",       // !
+    "ND_BITNOT",    // ~
+    "ND_LOGAND",    // &&
+    "ND_LOGOR",     // ||
+    "ND_RETURN",    // "return"
+    "ND_IF",        // "if"
+    "ND_FOR",       // "for" or "while"
+    "ND_DO",        // "do"
+    "ND_SWITCH",    // "switch"
+    "ND_CASE",      // "case"
+    "ND_BLOCK",     // { ... }
+    "ND_GOTO",      // "goto"
+    "ND_GOTO_EXPR", // "goto" labels-as-values
+    "ND_LABEL",     // Labeled statement
+    "ND_LABEL_VAL", // [GNU] Labels-as-values
+    "ND_FUNCALL",   // Function call
+    "ND_EXPR_STMT", // Expression statement
+    "ND_STMT_EXPR", // Statement expression
+    "ND_VAR",       // Variable
+    "ND_VLA_PTR",   // VLA designator
+    "ND_NUM",       // Integer
+    "ND_CAST",      // Type cast
+    "ND_MEMZERO",   // Zero-clear a stack variable
+    "ND_ASM",       // "asm"
+    "ND_CAS",       // Atomic compare-and-swap
+    "ND_EXCH",
+};
 
 struct EnumItem
 {
@@ -59,17 +110,19 @@ struct EnumType
     QList<EnumItem> items;
 };
 QHash<Type*,EnumType> enumTypes;
+QList<EnumItem> anonymousEnums;
 
 struct Decls
 {
     QMap<quint32,Type*> types; // line->Type
     QMap<quint32,Obj*> functions; // line->Obj
+    QMap<quint32,Macro*> consts; // line->Macro
 };
 QMap<QByteArray,Decls> declOrder; // file->Decls
 
 QHash<Type*,QByteArray> typeNames;
 QSet<Type*> usedTypes;
-static QByteArray modName;
+static QByteArray modName, prefix;
 
 static inline QString renderFilePos(Token* tok)
 {
@@ -81,12 +134,9 @@ static inline QString renderFilePos(Token* tok)
 
 static QByteArray defix( const QByteArray& name )
 {
-    if( !modName.isEmpty() && name.startsWith(modName) )
+    if( !prefix.isEmpty() && name.startsWith(prefix) )
     {
-        int pos = modName.size();
-        if( pos + 1 < name.size() && name[pos] == '_' )
-            pos++;
-        return name.mid(pos);
+        return name.mid(prefix.size());
     }
     return name;
 }
@@ -282,7 +332,7 @@ static void processFunctions( Obj *prog )
     }
 }
 
-static void renderTok( QTextStream& out, Token* cur, int level = 0 )
+static void renderTok( QTextStream& out, Token* cur, int level = 0, bool lean = false )
 {
     out << QByteArray(level*2,' ');
     switch( cur->kind )
@@ -294,16 +344,18 @@ static void renderTok( QTextStream& out, Token* cur, int level = 0 )
     case TK_KEYWORD:
         out << "KEYWORD "; break;
     case TK_STR:
-        out << "STR " << cur->str << " "; break;
+        out << "STR   "; break; //  << cur->str << " "; break;
     case TK_NUM:
-        out << "NUM " << cur->val << " " << double(cur->fval) << " "; break;
+        out << "NUM   "; break; // << cur->val << " " << double(cur->fval) << " "; break;
     case TK_PP_NUM:
         out << "PPNUM "; break;
     case TK_EOF:
         out << "EOF "; break;
     }
-    out << QByteArray(cur->loc).mid(0,cur->len) << " ";
-    if( cur->ty )
+
+    if( cur->len )
+        out << "\"" << QByteArray(cur->loc,cur->len) << "\" ";
+    if( !lean && cur->ty )
         renderTypeName(out, cur->ty);
     out << endl;
 }
@@ -313,15 +365,17 @@ struct Hideset {
   char *name;
 };
 
-static void printTok(Token *tok)
+static void printTok(Token *tok, bool lean = false)
 {
     QTextStream out(stdout);
     for (Token *cur = tok; cur; cur = cur->next)
     {
-        renderTok(out,cur);
-        if( cur->origin )
-            renderTok(out,cur->origin, 1);
-        if( cur->hideset )
+        if( lean )
+            out << cur << " ";
+        renderTok(out,cur,0,lean);
+        if( !lean && cur->origin )
+            renderTok(out,cur->origin, 1,lean);
+        if( !lean && cur->hideset )
         {
             Hideset* hs = cur->hideset;
             out << QByteArray(3,' ');
@@ -349,10 +403,34 @@ static inline void registerType(Type*t,HashEntry* e)
         qWarning() << "no namepos" << QByteArray::fromRawData(e->key, e->keylen) << renderFilePos(t->name_pos);
 }
 
+static inline void registerMacro(Macro* m,HashEntry* e)
+{
+    if( m->is_objlike )
+    {
+        Q_ASSERT( m->body );
+        if( m->body->kind == TK_EOF )
+            return;
+        Macro* tmp = declOrder[m->body->filename].consts[m->body->line_no];
+        if( tmp != 0 && tmp != m )
+            qWarning() << "macro already registered" << QByteArray::fromRawData(e->key, e->keylen) << renderFilePos(tmp->body);
+        else
+            declOrder[m->body->filename].consts[m->body->line_no] = m;
+    }
+}
+
 static void processTypes()
 {
     Scope* myScope = globalScope;
     QTextStream out(stdout);
+
+    for( int i = 0; i < macros.capacity; i++ )
+    {
+        HashEntry* e = &macros.buckets[i];
+        if( e->key == 0 )
+            continue;
+        registerMacro((Macro*)e->val,e);
+    }
+
     for( int i = 0; i < myScope->tags.capacity; i++ )
     {
         HashEntry* e = &myScope->tags.buckets[i];
@@ -381,23 +459,23 @@ static void processTypes()
         if( e->key == 0 )
             continue;
         VarScope* vs = (VarScope*)e->val;
+        const QByteArray name = QByteArray::fromRawData(e->key, e->keylen);
         if( vs->enum_ty )
         {
-            const QByteArray name = QByteArray::fromRawData(e->key, e->keylen);
-            enumTypes[vs->enum_ty].items.append(EnumItem(name, vs->enum_val, vs->enum_ty));
+            if( vs->enum_ty->name_pos == 0 )
+            {
+                // this happens for anonymous enums like the SDLK_* in SDL_keycode.h
+                // unfortunately we don't have file or position information here
+                anonymousEnums.append(EnumItem(name, vs->enum_val, vs->enum_ty));
+            }else
+                enumTypes[vs->enum_ty].items.append(EnumItem(name, vs->enum_val, vs->enum_ty));
 #if 0
             out << "enum " << QByteArray::fromRawData(e->key, e->keylen) << " " << vs->enum_val << " (";
             renderType(out,vs->enum_ty);
             out << ")" << endl;
 #endif
-        }/*else if( vs->var )
+        }else if( vs->type_def )
         {
-            out << "global ";
-            printObj(out,vs->var);
-            out << endl;
-        }*/else if( vs->type_def )
-        {
-            const QByteArray name = QByteArray::fromRawData(e->key, e->keylen);
             if( !typeNames[vs->type_def].isEmpty() )
             {
                 const QByteArray name2 = typeNames[vs->type_def];
@@ -598,7 +676,7 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
 #endif
             if( isBaseType(t->base->base) && t->base->base->kind != TY_VOID )
             {
-                out << "[]";
+                out << "*[]";
                 renderTypeDecl(out, t->base->base, level );
             }else
                 renderTypeDecl(out, t->base, level );
@@ -655,6 +733,147 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
     return false;
 }
 
+static QByteArray formatNum( Token* t )
+{
+    QByteArray res(t->loc,t->len);
+    if( res.endsWith('U') )
+        res.chop(1);
+    if( res.startsWith("0x") )
+    {
+        Q_ASSERT(res.length()>2);
+        QByteArray num = res.mid(2);
+        if( !::isdigit(num[0]) )
+            num = "0"+num;
+        res = num + "h";
+    }
+    return res;
+}
+
+static void dumpNode(Node* n, int level)
+{
+    if( n == 0 )
+        return;
+    QTextStream out(stdout);
+    QByteArray tab(level*2,' ');
+    out << tab << s_nodeKind[n->kind] << " ";
+    if( n->kind == ND_NUM )
+        out << formatNum(n->tok);
+    out << endl;
+    if( n->lhs )
+        dumpNode(n->lhs,level+1);
+    if( n->rhs )
+        dumpNode(n->rhs,level+1);
+    if( n->next )
+        dumpNode(n->next,level);
+}
+
+static QByteArray renderNode(Node* n)
+{
+    if( n == 0 )
+        throw "";
+    switch(n->kind)
+    {
+    case ND_ADD:       // +
+        return renderNode(n->lhs) + " + " + renderNode(n->rhs);
+    case ND_SUB:       // -
+        return renderNode(n->lhs) + " - " + renderNode(n->rhs);
+    case ND_MUL:       // *
+        return renderNode(n->lhs) + " * " + renderNode(n->rhs);
+    case ND_DIV:       // /
+        if( n->ty && ( n->ty->kind == TY_FLOAT || n->ty->kind == TY_DOUBLE || n->ty->kind == TY_LDOUBLE ))
+            return renderNode(n->lhs) + " / " + renderNode(n->rhs);
+        else
+            return renderNode(n->lhs) + " div " + renderNode(n->rhs);
+    case ND_NEG:       // unary -
+        return "-" + renderNode(n->lhs);
+    case ND_MOD:       // %
+        return renderNode(n->lhs) + " mod " + renderNode(n->rhs);
+    case ND_BITAND:    // &
+        return "bitand(" + renderNode(n->lhs) + ", " + renderNode(n->rhs) + ")";
+    case ND_BITOR:     // |
+        return "bitor(" + renderNode(n->lhs) + ", " + renderNode(n->rhs) + ")";
+    case ND_BITXOR:    // ^
+        return "bitxor(" + renderNode(n->lhs) + ", " + renderNode(n->rhs) + ")";
+    case ND_SHL:       // <<
+        return "lsl(" + renderNode(n->lhs) + ", " + renderNode(n->rhs) + ")";
+    case ND_SHR:       // >>
+        return "ror(" + renderNode(n->lhs) + ", " + renderNode(n->rhs) + ")";
+    case ND_EQ:        // ==
+        return "(" + renderNode(n->lhs) + " = " + renderNode(n->rhs) + ")";
+    case ND_NE:        // !=
+        return "(" + renderNode(n->lhs) + " # " + renderNode(n->rhs) + ")";
+    case ND_LT:        // <
+        return "(" + renderNode(n->lhs) + " < " + renderNode(n->rhs) + ")";
+    case ND_LE:        // <=
+        return "(" + renderNode(n->lhs) + " <= " + renderNode(n->rhs) + ")";
+    case ND_NOT:       // !
+        return "not " + renderNode(n->lhs);
+    case ND_BITNOT:    // ~
+        return "bitnot(" + renderNode(n->lhs) + ")";
+    case ND_LOGAND:    // &&
+        return "(" + renderNode(n->lhs) + " & " + renderNode(n->rhs) + ")";
+    case ND_LOGOR:     // ||
+        return "(" + renderNode(n->lhs) + " or " + renderNode(n->rhs) + ")";
+    case ND_VAR:       // Variable
+        switch( n->tok->kind )
+        {
+        case TK_IDENT:
+            return defix(QByteArray(n->tok->loc,n->tok->len));
+        case TK_STR:
+            return QByteArray(n->tok->loc,n->tok->len);
+        default:
+            throw "";
+        }
+        break;
+    case ND_NUM:       // Integer
+        return formatNum(n->tok);
+    case ND_CAST:      // Type cast
+        return renderNode(n->lhs);
+    default:
+        throw "";
+    }
+
+    return QByteArray();
+}
+
+static QByteArray concatToken(Token* tok )
+{
+    QByteArray res;
+    for (Token *cur = tok; cur && cur->kind != TK_EOF; cur = cur->next)
+    {
+        res += QByteArray(cur->loc,cur->len);
+    }
+    return res;
+}
+
+static QByteArray renderMacro(Token* e)
+{
+    //Token* start = e;
+    QByteArray res;
+
+    //qDebug() << "*** before";
+    //printTok(start,true);
+    e = preprocess(e);
+    //qDebug() << "*** after";
+    //printTok(e,true);
+    //qDebug() << "*** tokens:" << concatToken(e);
+    //qDebug() << "*** nodes";
+    Node* n = expr_checked(e);
+    //res = renderNode(res);
+    //dumpNode(n,0);
+    try
+    {
+        return renderNode(n);
+    }catch(...)
+    {
+        return "nil // CHECK: " + concatToken(e);
+    }
+
+    //qDebug() << "*** end";
+    return res;
+    //return renderExpr(e);
+}
+
 static void renderModule()
 {
     QString name;
@@ -670,9 +889,13 @@ static void renderModule()
     }else
         qDebug() << "generating" << f.fileName();
     QTextStream out(&f);
+
+    out << "// Generated by " << qApp->applicationName() << " " << qApp->applicationVersion() << " on "
+           << QDateTime::currentDateTime().toString(Qt::ISODate) << endl << endl;
+
     out << "definition " << escape(modName) << " [";
-    if( !modName.isEmpty() )
-        out << "prefix '" << modName << "_'"; // prefix, the string to be prefixed to proc names to find them in the library
+    if( !prefix.isEmpty() )
+        out << "prefix '" << prefix << "'"; // prefix, the string to be prefixed to proc names to find them in the library
     out << "]" << endl;
 
     QMap<QByteArray,Decls>::const_iterator i;
@@ -680,6 +903,18 @@ static void renderModule()
     for( i = declOrder.begin(); i != declOrder.end(); ++i )
     {
         out << endl << "    // from " << QFileInfo(i.key()).fileName() << endl;
+
+        if( !i.value().consts.isEmpty() )
+            out << "    const" << endl;
+        QMap<quint32,Macro*>::const_iterator m;
+        for( m = i.value().consts.begin(); m != i.value().consts.end(); ++m )
+        {
+            out << ws(2) << escape(defix(m.value()->name)) << " = ";
+            out << renderMacro(m.value()->body);
+            out << endl;
+        }
+        if( !i.value().consts.isEmpty() )
+            out << endl;
 
         QMap<quint32,Type*>::const_iterator k;
         bool headerDone = false;
@@ -712,6 +947,16 @@ static void renderModule()
         }
     }
 
+    if( !anonymousEnums.isEmpty() )
+    {
+        out << "    // global enum constants" << endl;
+        out << "    const" << endl;
+        foreach( const EnumItem& e, anonymousEnums )
+        {
+            out << ws(2) << escape(defix(e.name)) << " = " << e.value << endl;
+        }
+    }
+
     out << "end " << escape(modName) << endl;
 }
 
@@ -721,7 +966,7 @@ int main(int argc, char *argv[])
     a.setOrganizationName("Rochus Keller");
     a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
     a.setApplicationName("C2OBX");
-    a.setApplicationVersion("2021-08-02");
+    a.setApplicationVersion("2021-11-10");
 
     QTextStream out(stdout);
 
@@ -738,6 +983,7 @@ int main(int argc, char *argv[])
             out << "  reads a C header and translates it to an Oberon+ module." << endl;
             out << "options:" << endl;
             out << "  -m module     module name" << endl;
+            out << "  -p prefix     the prefix to remove" << endl;
             out << "  -Ipath        include path" << endl;
             out << "  -h            display this information" << endl;
             return 0;
@@ -746,6 +992,13 @@ int main(int argc, char *argv[])
             if( i+1 < args.size() )
             {
                 modName = args[i+1].toUtf8();
+                i++;
+            }
+        }else if( args[i] == "-p" )
+        {
+            if( i+1 < args.size() )
+            {
+                prefix = args[i+1].toUtf8();
                 i++;
             }
         }else if( args[i].startsWith("-I") )
@@ -771,6 +1024,7 @@ int main(int argc, char *argv[])
     Token *tok = must_tokenize_file(base_file);
     //printTok(tok);
     tok = preprocess(tok);
+    //printTok(tok);
     Obj *prog = parse(tok);
     // never arrives here in case of C errors
     processTypes();

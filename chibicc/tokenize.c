@@ -1,4 +1,5 @@
 #include "chibicc.h"
+#include <setjmp.h>
 
 // Input file
 static File *current_file;
@@ -12,8 +13,14 @@ static bool at_bol;
 // True if the current position follows a space character
 static bool has_space;
 
+int _tokenize_errors_cause_longjmp_ = 0;
+jmp_buf _tokenize_errors_jmp_buf_;
+
+
 // Reports an error and exit.
 void error(char *fmt, ...) {
+    if( _tokenize_errors_cause_longjmp_ )
+        longjmp(_tokenize_errors_jmp_buf_,0);
   va_list ap;
   va_start(ap, fmt);
   vfprintf(stderr, fmt, ap);
@@ -50,6 +57,8 @@ static void verror_at(char *filename, char *input, int line_no,
 }
 
 void error_at(char *loc, char *fmt, ...) {
+    if( _tokenize_errors_cause_longjmp_ )
+        longjmp(_tokenize_errors_jmp_buf_,0);
   int line_no = 1;
   for (char *p = current_file->contents; p < loc; p++)
     if (*p == '\n')
@@ -62,6 +71,8 @@ void error_at(char *loc, char *fmt, ...) {
 }
 
 void error_tok(Token *tok, char *fmt, ...) {
+    if( _tokenize_errors_cause_longjmp_ )
+        longjmp(_tokenize_errors_jmp_buf_,0);
   va_list ap;
   va_start(ap, fmt);
   verror_at(tok->file->name, tok->file->contents, tok->line_no, tok->loc, fmt, ap);

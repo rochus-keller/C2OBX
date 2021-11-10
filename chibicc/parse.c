@@ -17,7 +17,7 @@
 // parser.
 
 #include "chibicc.h"
-
+#include <setjmp.h>
 
 // Variable attributes such as typedef or extern.
 typedef struct {
@@ -3350,4 +3350,21 @@ Obj *parse(Token *tok) {
   // Remove redundant tentative definitions.
   scan_globals();
   return globals;
+}
+
+extern int _tokenize_errors_cause_longjmp_;
+extern jmp_buf _tokenize_errors_jmp_buf_;
+
+Node *expr_checked(Token *tok)
+{
+    if( setjmp(_tokenize_errors_jmp_buf_) )
+    {
+        _tokenize_errors_cause_longjmp_ = 0;
+        return 0;
+    }else
+        _tokenize_errors_cause_longjmp_ = 1;
+
+    Node* res = expr(&tok,tok);
+    _tokenize_errors_cause_longjmp_ = 0;
+    return res;
 }
