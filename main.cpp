@@ -306,7 +306,7 @@ static inline void registerFunction(Obj* o)
 {
     if( o->ty->name_pos )
     {
-        Q_ASSERT( declOrder[o->ty->name_pos->filename].functions[o->ty->name_pos->line_no] == 0 );
+        //Q_ASSERT( declOrder[o->ty->name_pos->filename].functions[o->ty->name_pos->line_no] == 0 );
         declOrder[o->ty->name_pos->filename].functions[o->ty->name_pos->line_no] = o;
     }else
         qWarning() << "no namepos" << o->name;
@@ -418,6 +418,18 @@ static inline void registerMacro(Macro* m,HashEntry* e)
     }
 }
 
+static void printMacros()
+{
+    for( int i = 0; i < macros.capacity; i++ )
+    {
+        HashEntry* e = &macros.buckets[i];
+        if( e->key == 0 )
+            continue;
+        Macro* m = (Macro*)e->val;
+        qDebug() << "macro" << QByteArray(m->name) << m->is_objlike;
+    }
+}
+
 static void processTypes()
 {
     Scope* myScope = globalScope;
@@ -487,7 +499,7 @@ static void processTypes()
             registerType(vs->type_def,e);
             if( vs->type_def->kind == TY_ENUM )
             {
-                Q_ASSERT( enumTypes[vs->type_def].name.isEmpty() ); // holds in SDL
+                //Q_ASSERT( enumTypes[vs->type_def].name.isEmpty() ); // holds in SDL
                 enumTypes[vs->type_def].name = name;
             }else
             {
@@ -902,6 +914,8 @@ static void renderModule()
 
     for( i = declOrder.begin(); i != declOrder.end(); ++i )
     {
+        if( i.key() == "<built-in>" )
+            continue;
         out << endl << "    // from " << QFileInfo(i.key()).fileName() << endl;
 
         if( !i.value().consts.isEmpty() )
@@ -960,6 +974,14 @@ static void renderModule()
     out << "end " << escape(modName) << endl;
 }
 
+static void define(char *str) {
+  char *eq = strchr(str, '=');
+  if (eq)
+    define_macro(strndup(str, eq - str), eq + 1);
+  else
+    define_macro(str, "1");
+}
+
 int main(int argc, char *argv[])
 {
     QCoreApplication a(argc, argv);
@@ -986,6 +1008,7 @@ int main(int argc, char *argv[])
             out << "  -p prefix     the prefix to remove" << endl;
             out << "  -Ipath        include path" << endl;
             out << "  -h            display this information" << endl;
+            out << "  -Ddefine      add define" << endl;
             return 0;
         }else if( args[i] == "-m" )
         {
@@ -1006,6 +1029,10 @@ int main(int argc, char *argv[])
             includes.append(args[i].mid(2).toUtf8());
             strarray_push(&include_paths, includes.back().data() );
         }
+        else if( args[i].startsWith("-D") )
+        {
+            define(args[i].mid(2).toUtf8().data());
+        }
         else if( !args[ i ].startsWith( '-' ) )
         {
             files += args[ i ];
@@ -1019,11 +1046,14 @@ int main(int argc, char *argv[])
     {
         qCritical() << "error: expecting one header file";
     }
+    QDir::setCurrent( QFileInfo(files.first()).absolutePath() );
     QByteArray base = files.first().toUtf8();
     base_file = base.data();
     Token *tok = must_tokenize_file(base_file);
+    //printMacros();
     //printTok(tok);
     tok = preprocess(tok);
+    //printMacros();
     //printTok(tok);
     Obj *prog = parse(tok);
     // never arrives here in case of C errors
