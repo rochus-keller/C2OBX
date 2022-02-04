@@ -33,12 +33,13 @@ struct Node;
 
 // Scope for local variables, global variables, typedefs
 // or enum constants
-struct VarScope {
-    Obj *var;
-    Type *type_def;
+struct ObjScope {
+    QByteArray name;
+    Obj *obj;
+    Type *typedef_;
     Type *enum_ty;
     int enum_val;
-    VarScope():var(0),type_def(0),enum_ty(0),enum_val(0){}
+    ObjScope():obj(0),typedef_(0),enum_ty(0),enum_val(0){}
 };
 
 // Represents a block scope.
@@ -47,10 +48,10 @@ struct Scope {
 
     // C has two block scopes; one is for variables/typedefs and
     // the other is for struct/union/enum tags.
-    typedef QHash<QByteArray,VarScope*> Vars;
-    Vars vars; // val = VarScope*
+    typedef QHash<QByteArray,ObjScope*> Objs;
+    Objs objs; // typedef and object scope
     typedef QHash<QByteArray,Type*> Tags;
-    Tags tags; // val = Type* (struct/union/enum)
+    Tags tags; // struct/union/enum scope
 
     Scope():next(0){}
 };
@@ -61,6 +62,8 @@ public:
     static Scope *scope; // global scope
     static Obj *globalVars;
     static QList<Obj*> funcs;
+    static QSet<Type*> typeDecls; // all global types named by tag and/or typedef
+    static QSet<Type*> anonymousEnums;
     static qint64 const_expr(Token **rest, Token *tok);
     static Node *expr_checked(Token *tok);
     static Obj *parse(Token *tok);

@@ -21,12 +21,15 @@
 * http://www.gnu.org/copyleft/gpl.html.
 */
 
+#include <QList>
+
 namespace C
 {
 struct Token;
 struct Node;
 struct Obj;
 struct Member;
+struct ObjScope;
 
 struct Type
 {
@@ -66,8 +69,9 @@ struct Type
     Type *base;
 
     // Declaration
-    Token *name;
+    Token *name; // this is used to transport param names
     Token *name_pos;
+    Token* typeName; // this is used to transport the present type alias name
 
     // Array
     int array_len;
@@ -87,8 +91,14 @@ struct Type
     bool is_variadic;
     Type *next;
 
-    Type();
-    Type(Kind, int size, int aligned, bool isUnsigned = false);
+    // enum, struct, union
+    Token* tag;
+    QList<Token*> typedefs;
+
+    // enum
+    QList<ObjScope*> consts;
+
+    Type(Kind = VOID, int size = 0, int aligned = 0, bool isUnsigned = false);
     bool is_integer() const;
     bool is_flonum() const;
     bool is_numeric() const;

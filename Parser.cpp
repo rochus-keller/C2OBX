@@ -80,6 +80,8 @@ Obj *Parser::globalVars = 0;
 
 Scope *Parser::scope = new Scope();
 QList<Obj*> Parser::funcs;
+QSet<Type*> Parser::typeDecls;
+QSet<Type*> Parser::anonymousEnums;
 
 // Points to the function object the parser is currently parsing.
 static Obj *current_fn;
@@ -172,9 +174,9 @@ static void leave_scope(void) {
 }
 
 // Find a variable by name.
-static VarScope *find_var(Token *tok) {
+static ObjScope *find_var(Token *tok) {
     for (Scope *sc = Parser::scope; sc; sc = sc->next) {
-        VarScope *sc2 = sc->vars.value(QByteArray(tok->loc, tok->len));
+        ObjScope *sc2 = sc->objs.value(tok->txt);
         if (sc2)
             return sc2;
     }
@@ -183,16 +185,17 @@ static VarScope *find_var(Token *tok) {
 
 static Type *find_tag(Token *tok) {
     for (Scope *sc = Parser::scope; sc; sc = sc->next) {
-        Type *ty = sc->tags.value(QByteArray(tok->loc, tok->len));
+        Type *ty = sc->tags.value(tok->txt);
         if (ty)
             return ty;
     }
     return NULL;
 }
 
-static VarScope *push_scope(const char *name) {
-    VarScope *sc = new VarScope();
-    Parser::scope->vars.insert(name, sc);
+static ObjScope *push_scope(const QByteArray& name) {
+    ObjScope *sc = new ObjScope();
+    sc->name = name;
+    Parser::scope->objs.insert(name, sc);
     return sc;
 }
 
@@ -242,7 +245,7 @@ static Obj *new_var(const char *name, Type *ty) {
     var->name = var->nameBuf.constData();
     var->ty = ty;
     var->align = ty->align;
-    push_scope(name)->var = var;
+    push_scope(name)->obj = var;
     return var;
 }
 
@@ -265,7 +268,10 @@ static Obj *new_gvar(const char *name, Type *ty) {
 
 static QByteArray new_unique_name(void) {
     static int id = 0;
-    return Tokenizer::format(".L..%d", id++);
+    static QList<QByteArray> memorize;
+    const QByteArray name = Tokenizer::format(".L..%d", id++);
+    memorize.append(name);
+    return name;
 }
 
 static Obj *new_anon_gvar(Type *ty) {
@@ -281,20 +287,44 @@ static Obj *new_string_literal(const char *p, Type *ty) {
 static QByteArray get_ident(Token *tok) {
     if (tok->kind != Token::IDENT)
         Tokenizer::error_tok(tok, "expected an identifier");
-    return QByteArray(tok->loc, tok->len);
+    return tok->txt;
 }
 
 static Type *find_typedef(Token *tok) {
     if (tok->kind == Token::IDENT) {
-        VarScope *sc = find_var(tok);
+        ObjScope *sc = find_var(tok);
         if (sc)
-            return sc->type_def;
+        {
+            if( sc->typedef_ )
+            {
+                sc->typedef_->typeName = 0;
+                for( int i = 0; i < sc->typedef_->typedefs.size(); i++ )
+                {
+                    // set typeName to the actual name used here to reference the type
+                    if( sc->typedef_->typedefs[i]->txt == tok->txt )
+                    {
+                        sc->typedef_->typeName = sc->typedef_->typedefs[i];
+                        break;
+                    }
+                }
+                if( sc->typedef_->typeName == 0 && sc->typedef_->tag && sc->typedef_->tag->txt == tok->txt )
+                    sc->typedef_->typeName = sc->typedef_->tag;
+            }
+            return sc->typedef_;
+        }
     }
     return NULL;
 }
 
 static void push_tag_scope(Token *tok, Type *ty) {
-    Parser::scope->tags.insert(QByteArray(tok->loc, tok->len), ty);
+    Parser::scope->tags.insert(tok->txt, ty);
+    if( Parser::scope->next == 0 )
+    {
+        Q_ASSERT( ty->tag == 0 );
+        ty->tag = tok;
+        Parser::typeDecls.insert(ty);
+        Parser::anonymousEnums.remove(ty);
+    }
 }
 
 // declspec = ("void" | "_Bool" | "char" | "short" | "int" | "long"
@@ -695,7 +725,9 @@ static Type *enum_specifier(Token **rest, Token *tok) {
     if (tok->kind == Token::IDENT) {
         tag = tok;
         tok = tok->next;
-    }
+    }else
+        ty->name_pos = tok; // we need a position in any way
+    Parser::anonymousEnums.insert(ty);
 
     if (tag && !tok->equal("{")) {
         Type *ty = find_tag(tag);
@@ -722,9 +754,10 @@ static Type *enum_specifier(Token **rest, Token *tok) {
         if (tok->equal("="))
             val = Parser::const_expr(&tok, tok->next);
 
-        VarScope *sc = push_scope(name);
+        ObjScope *sc = push_scope(name);
         sc->enum_ty = ty;
         sc->enum_val = val++;
+        ty->consts.append(sc);
     }
 
     if (tag)
@@ -798,7 +831,7 @@ static Node *declaration(Token **rest, Token *tok, Type *basety, VarAttr *attr) 
         if (attr && attr->is_static) {
             // static local variable
             Obj *var = new_anon_gvar(ty);
-            push_scope(get_ident(ty->name))->var = var;
+            push_scope(get_ident(ty->name))->obj = var;
             if (tok->equal("="))
                 gvar_initializer(&tok, tok->next, var);
             continue;
@@ -1451,7 +1484,7 @@ static bool is_typename(Token *tok) {
             map.insert(kw[i]);
     }
 
-    return map.contains(QByteArray(tok->loc, tok->len)) || find_typedef(tok);
+    return map.contains(tok->txt) || find_typedef(tok);
 }
 
 // asm-stmt = "asm" ("volatile" | "inline")* "(" string-literal ")"
@@ -1686,7 +1719,7 @@ static Node *stmt(Token **rest, Token *tok) {
 
     if (tok->kind == Token::IDENT && tok->next->equal(":")) {
         Node *node = Node::new_node(Node::LABEL, tok);
-        node->label = strndup(tok->loc, tok->len);
+        node->label = tok->txt;
         node->unique_label = new_unique_name();
         node->lhs = stmt(rest, tok->next->next);
         node->goto_next = labels;
@@ -2603,7 +2636,7 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     if (tag) {
         // If this is a redefinition, overwrite a previous type.
         // Otherwise, register the struct type.
-        Type *ty2 = Parser::scope->tags.value(QByteArray(tag->loc, tag->len));
+        Type *ty2 = Parser::scope->tags.value(tag->txt);
         if (ty2) {
             *ty2 = *ty;
             return ty2;
@@ -2969,20 +3002,20 @@ static Node *primary(Token **rest, Token *tok) {
 
     if (tok->kind == Token::IDENT) {
         // Variable or enum constant
-        VarScope *sc = find_var(tok);
+        ObjScope *sc = find_var(tok);
         *rest = tok->next;
 
         // For "static inline" function
-        if (sc && sc->var && sc->var->is_function) {
+        if (sc && sc->obj && sc->obj->is_function) {
             if (current_fn)
-                current_fn->refs.append(sc->var->name);
+                current_fn->refs.append(sc->obj->name);
             else
-                sc->var->is_root = true;
+                sc->obj->is_root = true;
         }
 
         if (sc) {
-            if (sc->var)
-                return Node::new_var_node(sc->var, tok);
+            if (sc->obj)
+                return Node::new_var_node(sc->obj, tok);
             if (sc->enum_ty)
                 return Node::new_num(sc->enum_val, tok);
         }
@@ -3026,7 +3059,13 @@ static Token *parse_typedef(Token *tok, Type *basety) {
         Type *ty = declarator(&tok, tok, basety);
         if (!ty->name)
             Tokenizer::error_tok(ty->name_pos, "typedef name omitted");
-        push_scope(get_ident(ty->name))->type_def = ty;
+        push_scope(get_ident(ty->name))->typedef_ = ty;
+        if( Parser::scope->next == 0 )
+        {
+            Parser::typeDecls.insert(ty);
+            Parser::anonymousEnums.remove(ty);
+            ty->typedefs.append(ty->name);
+        }
     }
     return tok;
 }
@@ -3066,9 +3105,9 @@ static Obj *find_func(const char *name) {
     while (sc->next)
         sc = sc->next;
 
-    VarScope *sc2 = sc->vars.value(name);
-    if (sc2 && sc2->var && sc2->var->is_function)
-        return sc2->var;
+    ObjScope *sc2 = sc->objs.value(name);
+    if (sc2 && sc2->obj && sc2->obj->is_function)
+        return sc2->obj;
     return NULL;
 }
 
@@ -3103,6 +3142,7 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     } else {
         fn = new_gvar(name_str, ty);
         fn->is_function = true;
+        fn->tok = ty->name;
         fn->is_definition = tok->equal("{");
         fn->is_static = attr->is_static || (attr->is_inline && !attr->is_extern);
         fn->is_inline = attr->is_inline;
@@ -3136,11 +3176,11 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     // [https://www.sigbus.info/n1570#6.4.2.2p1] "__func__" is
     // automatically defined as a local variable containing the
     // current function name.
-    push_scope("__func__")->var =
+    push_scope("__func__")->obj =
             new_string_literal(fn->name, Type::_char->array_of(strlen(fn->name) + 1));
 
     // [GNU] __FUNCTION__ is yet another name of __func__.
-    push_scope("__FUNCTION__")->var =
+    push_scope("__FUNCTION__")->obj =
             new_string_literal(fn->name, Type::_char->array_of(strlen(fn->name) + 1));
 
     fn->body = compound_stmt(&tok, tok);

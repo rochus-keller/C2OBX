@@ -28,6 +28,8 @@
 #include "Preprocessor.h"
 #include "Parser.h"
 #include "Transpiler.h"
+#include "Transpiler2.h"
+#include "Type.h"
 
 static void printMacros()
 {
@@ -63,7 +65,7 @@ static void renderTok( QTextStream& out, C::Token* cur, int level = 0, bool lean
     }
 
     if( cur->len )
-        out << "\"" << QByteArray(cur->loc,cur->len) << "\" ";
+        out << "\"" << cur->txt << "\" ";
     if( cur->file )
         out << QFileInfo(cur->file->name).fileName() << " " << cur->line_no;
     //if( !lean && cur->ty )
@@ -83,6 +85,24 @@ static void printTok(C::Token *tok, bool lean = false)
         if( !lean && cur->origin )
             renderTok(out,cur->origin, 1,lean);
 #endif
+    }
+}
+
+static void printAllTypeDecls()
+{
+    QTextStream out(stdout);
+    QSet<C::Type*>::const_iterator i;
+    for( i = C::Parser::typeDecls.begin(); i != C::Parser::typeDecls.end(); ++i )
+    {
+        C::Type* t = (*i);
+        out << "type " << t->kind;
+        if( t->name )
+            out << " " << t->name->txt << " " << QFileInfo(t->name->filename).fileName() << " " << t->name->line_no;
+        out << endl;
+        if( t->tag )
+            out << "    tag " << t->tag->txt << " " << QFileInfo(t->tag->filename).fileName() << " " << t->tag->line_no << endl;
+        foreach( C::Token* tok, t->typedefs )
+            out << "    def " << tok->txt << " " << QFileInfo(tok->filename).fileName() << " " << tok->line_no << endl;
     }
 }
 
@@ -161,8 +181,9 @@ int main(int argc, char *argv[])
     //printMacros();
     //printTok(tok);
     C::Parser::parse(tok);
+    //printAllTypeDecls();
 
-    C::Transpiler::render(modName, prefix);
+    C::Transpiler2::render(modName, prefix);
 
     return 0; // a.exec();
 }

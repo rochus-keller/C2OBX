@@ -24,6 +24,7 @@
 #include <QSet>
 #include <stdarg.h>
 #include <stdio.h>
+#include <QtDebug>
 using namespace C;
 
 bool Tokenizer::tokenize_errors_cause_exception = false;
@@ -145,6 +146,7 @@ Token* Token::new_token(Token::Kind kind, const char* start, const char* end)
     tok->kind = kind;
     tok->loc = start;
     tok->len = end - start;
+    tok->txt = QByteArray(start, end - start);
     tok->file = current_file;
     tok->filename = current_file->display_name;
     tok->at_bol = ::at_bol;
@@ -308,7 +310,7 @@ bool Token::is_keyword() const
             map.insert(kw[i]);
     }
 
-    return map.contains( QByteArray(loc,len) );
+    return map.contains( txt );
 }
 
 static int read_escaped_char(const char **new_pos, const char *p) {
@@ -1229,7 +1231,7 @@ void Token::read_macro_definition(Token** rest)
     Token* tok = this;
     if (tok->kind != IDENT)
         Tokenizer::error_tok(tok, "macro name must be an identifier");
-    QByteArray name(tok->loc, tok->len);
+    QByteArray name = tok->txt;
     tok = tok->next;
 
     if (!tok->has_space && tok->equal("(")) {
@@ -1335,13 +1337,13 @@ Macro::Param * Macro::read_macro_params(Token** rest, Token* tok, QByteArray& va
             Tokenizer::error_tok(tok, "expected an identifier");
 
         if (tok->next->equal("...")) {
-            va_args_name = QByteArray(tok->loc, tok->len);
+            va_args_name = tok->txt;
             *rest = tok->next->next->skip(")");
             return head.next;
         }
 
         Macro::Param *m = new Macro::Param();
-        m->name = QByteArray(tok->loc, tok->len);
+        m->name = tok->txt;
         cur = cur->next = m;
         tok = tok->next;
     }

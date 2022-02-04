@@ -1,5 +1,5 @@
-#ifndef TRANSPILER_H
-#define TRANSPILER_H
+#ifndef TRANSPILER2_H
+#define TRANSPILER2_H
 
 /*
 * Copyright (c) 2022 Rochus Keller
@@ -24,14 +24,13 @@
 
 namespace C
 {
-class Transpiler
+class Transpiler2
 {
 public:
     static void render( const QByteArray& modName, const QByteArray& prefix );
 private:
-    Transpiler();
+    Transpiler2();
 };
-
 }
 
-#endif // TRANSPILER_H
+#endif // TRANSPILER2_H

@@ -67,6 +67,7 @@ struct Token
     long double fval; // If kind is TK_NUM, its value
     const char *loc;        // Token location
     int len;          // Token length
+    QByteArray txt;   // redundant copy of loc/len used for unique address when assigned to node->label
     Type *ty;         // Used if TK_NUM or TK_STR
     QByteArray str;        // String literal contents (utf8) including terminating '\0'
 

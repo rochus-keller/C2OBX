@@ -17,7 +17,7 @@
 * http://www.gnu.org/copyleft/gpl.html.
 */
 
-#include "Transpiler.h"
+#include "Transpiler2.h"
 #include "Type.h"
 #include "Tokenizer.h"
 #include "Parser.h"
@@ -31,32 +31,17 @@
 #include <QtDebug>
 using namespace C;
 
-struct EnumItem
-{
-    QByteArray name;
-    int value;
-    Type* type;
-    EnumItem(const QByteArray& n, int v, Type* t):name(n),value(v),type(t){}
-};
-struct EnumType
-{
-    QByteArray name;
-    QList<EnumItem> items;
-};
-static QHash<Type*,EnumType> enumTypes;
-static QList<EnumItem> anonymousEnums;
-
-struct Decls
+struct Decls2
 {
     QMap<quint32,Type*> types; // line->Type
+    QMap<quint32,QPair<Token*,Token*> > alias; // line->Name
     QMap<quint32,Obj*> functions; // line->Obj
     QMap<quint32,C::Macro*> consts; // line->Macro
+    QMap<quint32,Type*> consts2; // line->anonymous enum
 };
-static QMap<QByteArray,Decls> declOrder; // file->Decls
-
-static QHash<Type*,QByteArray> typeNames;
-static QByteArray prefix;
-static const QSet<QByteArray> obxKeywords = QSet<QByteArray>() << "ARRAY" << "THEN" << "BEGIN"<< "IN"<< "TO"
+static QMap<QByteArray,Decls2> declOrder2; // file->Decls
+static QByteArray prefix2;
+static const QSet<QByteArray> obxKeywords2 = QSet<QByteArray>() << "ARRAY" << "THEN" << "BEGIN"<< "IN"<< "TO"
                                                                 << "BY"<< "IS"<< "TRUE"<< "CASE"<< "MOD"<< "TYPE"
                                                                 << "CONST"<< "MODULE"<< "UNTIL"<< "DIV"<< "NIL"
                                                                 << "VAR"<< "DO"<< "OF"<< "WHILE"<< "ELSE"<< "OR"
@@ -71,16 +56,24 @@ static QByteArray escape( const QByteArray& name )
     if( name.isEmpty() || name.contains('_') )
         return name;
 
-    if( obxKeywords.contains(name) )
+    if( obxKeywords2.contains(name) )
         return name + "_";
     for( int i = 0; i < name.size(); i++ )
     {
         if( !::islower(name[i]) )
             return name;
     }
-    if( obxKeywords.contains(name.toUpper()) )
+    if( obxKeywords2.contains(name.toUpper()) )
         return name + "_";
     return name;
+}
+
+static inline QString renderFilePos(Token* tok)
+{
+    if( tok )
+        return QString("%1:%2" ).arg(QFileInfo(tok->filename).fileName()).arg(tok->line_no);
+    else
+        return "???";
 }
 
 static inline bool isBaseType(Type* t)
@@ -106,25 +99,20 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level );
 
 static QByteArray defix( const QByteArray& name )
 {
-    if( !prefix.isEmpty() && name.startsWith(prefix) )
+    if( !prefix2.isEmpty() && name.startsWith(prefix2) )
     {
-        return name.mid(prefix.size());
+        return name.mid(prefix2.size());
     }
     return name;
 }
 
 static void renderTypeName( QTextStream& out, Type* t, int level = 0 )
 {
-    if( isBaseType(t) )
-    {
-        renderTypeDecl(out,t,level);
-        return;
-    }
-    QByteArray typeName = typeNames.value(t);
-    if( typeName.isEmpty() )
-        typeName = enumTypes.value(t).name;
-    if( typeName.isEmpty() && t->origin )
-        typeName = typeNames.value(t->origin);
+    QByteArray typeName;
+    if( t->typeName )
+        typeName = t->typeName->txt;
+    else if( t->origin && t->origin->typeName )
+        typeName = t->origin->typeName->txt;
     if( !typeName.isEmpty() )
         out << escape(defix(typeName));
     else
@@ -135,24 +123,23 @@ static inline QByteArray ws(int level) { return QByteArray(level*4,' '); }
 
 static bool renderEnum(QTextStream& out, Type* t, int level)
 {
-    const EnumType& et = enumTypes[t];
-    if( et.items.isEmpty() )
+    if( t->consts.isEmpty() )
     {
         out << "()";
         return false;
     }
 
-    QMultiMap<int,const EnumItem*> itemsByVal;
-    QMap<QByteArray,const EnumItem*> itemsByName;
-    for(int i = 0; i < et.items.size(); i++ )
+    QMultiMap<int,const ObjScope*> itemsByVal;
+    QMap<QByteArray,const ObjScope*> itemsByName;
+    for(int i = 0; i < t->consts.size(); i++ )
     {
-        itemsByVal.insert(et.items[i].value, &et.items[i] );
-        itemsByName.insert(et.items[i].name, &et.items[i] );
+        itemsByVal.insert(t->consts[i]->enum_val, t->consts[i] );
+        itemsByName.insert(t->consts[i]->name, t->consts[i] );
     }
 
     int i = 0;
     bool trueEnum = true;
-    QMultiMap<int,const EnumItem*>::const_iterator j = itemsByVal.begin();
+    QMultiMap<int,const ObjScope*>::const_iterator j = itemsByVal.begin();
     for( j = itemsByVal.begin(); j != itemsByVal.end(); ++j, i++ )
     {
         if( j.key() != i )
@@ -165,7 +152,7 @@ static bool renderEnum(QTextStream& out, Type* t, int level)
     if( trueEnum )
     {
         out << "(";
-        QMultiMap<int,const EnumItem*>::const_iterator i;
+        QMultiMap<int,const ObjScope*>::const_iterator i;
         int done = 0;
         for( i = itemsByVal.begin(); i != itemsByVal.end(); ++i )
         {
@@ -179,9 +166,9 @@ static bool renderEnum(QTextStream& out, Type* t, int level)
     {
         out << "integer" << endl;
         out << ws(level-2) << "const" << endl;
-        QMap<QByteArray,const EnumItem*>::const_iterator i;
+        QMap<QByteArray,const ObjScope*>::const_iterator i;
         for( i = itemsByName.begin(); i != itemsByName.end(); ++i )
-            out << ws(level-1) << escape(defix(i.key())) << " = " << i.value()->value << endl;
+            out << ws(level-1) << escape(defix(i.key())) << " = " << i.value()->enum_val << endl;
         //out << ws(level-2) << "type";
         return true;
     }
@@ -232,14 +219,6 @@ static void renderParams(QTextStream& out, Type* func )
     }
 }
 
-static inline QString renderFilePos(Token* tok)
-{
-    if( tok )
-        return QString("%1:%2" ).arg(QFileInfo(tok->filename).fileName()).arg(tok->line_no);
-    else
-        return "???";
-}
-
 static bool renderTypeDecl(QTextStream& out, Type* t, int level )
 {
     switch( t->kind )
@@ -281,17 +260,8 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
             out << "*[]";
             if( t->base->base->kind == Type::PTR )
                 qCritical() << "pointers like ***type are not supported";
-#if 0
-            Type* ptr = t->base->base;
-            while( ptr && ptr->kind == Type::PTR  ) // !isBaseType(ptr->base)
-            {
-                out << "[]";
-                ptr = ptr->base;
-            }
-#else
             if( t->base->base->kind == Type::PTR )
                 qCritical() << "pointers like ***type are not supported";
-#endif
             if( isBaseType(t->base->base) && t->base->base->kind != Type::VOID )
             {
                 out << "*[]";
@@ -351,124 +321,90 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
     return false;
 }
 
-static inline void registerType(Type*t, const QByteArray& name)
+static void orderDecls()
 {
-    if( t->name_pos )
+    foreach( Type* t, Parser::typeDecls )
     {
-        Type* tmp = declOrder[t->name_pos->filename].types[t->name_pos->line_no];
+        Q_ASSERT( t->tag || !t->typedefs.isEmpty() );
+
+        Token* name = 0;
+        if( !t->typedefs.isEmpty() )
+            name = t->typedefs.first();
+        else
+            name = t->tag;
+
+        Type* tmp = declOrder2[name->filename].types[name->line_no];
+        if( tmp != 0 )
+            qWarning() << "type already registered" << name->txt << renderFilePos(name);
+        else
+        {
+            declOrder2[name->filename].types[name->line_no] = t;
+            for( int i = 1; i < t->typedefs.size(); i++ )
+                declOrder2[t->typedefs[i]->filename].alias[t->typedefs[i]->line_no] = qMakePair(t->typedefs[i],name);
+        }
+    }
+
+    foreach( Type* t, Parser::anonymousEnums )
+    {
+        Q_ASSERT( t->name_pos != 0 ); // is set even if there is no name
+        Decls2& d = declOrder2[t->name_pos->filename];
+        Type* tmp = d.consts2[t->name_pos->line_no];
         if( tmp != 0 && tmp != t )
-            qWarning() << "type already registered" << name <<
+            qWarning() << "anonymous enum already registered" <<
                         renderFilePos(t->name_pos) << renderFilePos(tmp->name_pos);
         else
-            declOrder[t->name_pos->filename].types[t->name_pos->line_no] = t;
-    }else
-        qWarning() << "no namepos" << name << renderFilePos(t->name_pos);
-}
-
-static inline void registerMacro(Macro* m, const QByteArray& name)
-{
-    if( m->is_objlike )
-    {
-        Q_ASSERT( m->body );
-        if( m->body->kind == Token::_EOF )
-            return;
-        Macro* tmp = declOrder[m->body->filename].consts[m->body->line_no];
-        if( tmp != 0 && tmp != m )
-            qWarning() << "macro already registered" << name << renderFilePos(tmp->body);
-        else
-            declOrder[m->body->filename].consts[m->body->line_no] = m;
+            d.consts2[t->name_pos->line_no] = t;
     }
-}
 
-static void processTypes()
-{
     for( Tokenizer::Macros::const_iterator i = Tokenizer::macros.begin(); i != Tokenizer::macros.end(); ++i )
     {
-        if( i.value()->body == 0 || i.value()->body->filename == "<built-in>")
+        Macro* m = i.value();
+        if( m->body == 0 || m->body->filename == "<built-in>" || !m->is_objlike )
             continue;
-        registerMacro(i.value(),i.key());
+        Q_ASSERT( m->body );
+        if( m->body->kind == Token::_EOF )
+            continue;
+        Macro* tmp = declOrder2[m->body->filename].consts[m->body->line_no];
+        if( tmp != 0 && tmp != m )
+            qWarning() << "macro already registered" << m->name << renderFilePos(tmp->body);
+        else
+            declOrder2[m->body->filename].consts[m->body->line_no] = m;
     }
 
-    Scope* myScope = Parser::scope;
-    for( Scope::Tags::const_iterator i = myScope->tags.begin(); i != myScope->tags.end(); ++i )
-    {
-        Type* t = i.value();
-        Q_ASSERT( t->kind == Type::STRUCT || t->kind == Type::TUNION || t->kind == Type::ENUM ); // holds in SDL
-        if( t->kind == Type::ENUM )
-        {
-            // never happens in SDL, check
-            Q_ASSERT( enumTypes[t].name.isEmpty() );
-            enumTypes[t].name = i.key();
-        }
-        Q_ASSERT( typeNames[t].isEmpty() ); // this one holds in SDL
-        typeNames[t] = i.key();
-        registerType(t, i.key());
-    }
-    for( Scope::Objs::const_iterator i = myScope->objs.begin(); i != myScope->objs.end(); ++i )
-    {
-        ObjScope* vs = i.value();
-        const QByteArray name = i.key();
-        if( vs->enum_ty )
-        {
-            if( vs->enum_ty->name_pos == 0 )
-            {
-                // this happens for anonymous enums like the SDLK_* in SDL_keycode.h
-                // unfortunately we don't have file or position information here
-                anonymousEnums.append(EnumItem(name, vs->enum_val, vs->enum_ty));
-            }else
-                enumTypes[vs->enum_ty].items.append(EnumItem(name, vs->enum_val, vs->enum_ty));
-        }else if( vs->typedef_ )
-        {
-            if( !typeNames[vs->typedef_].isEmpty() )
-            {
-                const QByteArray name2 = typeNames[vs->typedef_];
-                if( name != name2 )
-                    qWarning() << "type" << vs->typedef_ << "renamed from:" << name2 << "to:" << name << renderFilePos(vs->typedef_->name_pos);
-                // the same type get's even more than one name; typedefs don't seem to be sufficiently mapped for this application
-            }else
-                typeNames[vs->typedef_] = name;
-            registerType(vs->typedef_, i.key());
-            if( vs->typedef_->kind == Type::ENUM )
-            {
-                //Q_ASSERT( enumTypes[vs->type_def].name.isEmpty() ); // holds in SDL
-                enumTypes[vs->typedef_].name = name;
-            }else
-            {
-            }
-        }
-    }
-}
-
-static inline void registerFunction(Obj* o)
-{
-    if( o->ty->name_pos )
-    {
-        //Q_ASSERT( declOrder[o->ty->name_pos->filename].functions[o->ty->name_pos->line_no] == 0 );
-        declOrder[o->ty->name_pos->filename].functions[o->ty->name_pos->line_no] = o;
-    }else
-        qWarning() << "no namepos" << o->name;
-}
-
-static void processFunctions()
-{
     for( int i = 0; i < Parser::funcs.size(); i++ )
     {
-        Obj* var = Parser::funcs[i];
-        if( var->is_function && ( var->is_inline || var->is_definition ) )
-            qWarning() << "not considering (inline) function definition" << var->name << renderFilePos(var->ty->name_pos);
-        if( !( var->is_function && var->is_live && var->is_root && !var->is_inline && !var->is_definition ) )
+        Obj* f = Parser::funcs[i];
+        if( f->is_function && ( f->is_inline || f->is_definition ) )
+            qWarning() << "not considering (inline) function definition" << f->name << renderFilePos(f->ty->name_pos);
+        if( !( f->is_function && f->is_live && f->is_root && !f->is_inline && !f->is_definition ) )
             continue;
-        registerFunction(var);
+        if( f->ty->name_pos )
+        {
+            //Q_ASSERT( declOrder[o->ty->name_pos->filename].functions[o->ty->name_pos->line_no] == 0 );
+            declOrder2[f->ty->name_pos->filename].functions[f->ty->name_pos->line_no] = f;
+        }else
+            qWarning() << "function has no namepos" << f->name;
     }
 }
 
-static inline QByteArray getTypeName(Type* t)
+static inline QByteArray getTypeDeclName(Type* t)
 {
-    QByteArray typeName = typeNames.value(t);
-    if( typeName.isEmpty() )
-        typeName = enumTypes.value(t).name;
-    if( typeName.isEmpty() && t->origin )
-        typeName = typeNames.value(t->origin);
+    QByteArray typeName;
+#if 0
+    if( t->typeName )
+        typeName = t->typeName->txt;
+    else if( t->origin && t->origin->typeName )
+        typeName = t->origin->typeName->txt;
+    else if( t->name )
+        typeName = t->name->txt;
+#else
+    if( !t->typedefs.isEmpty() )
+        typeName = t->typedefs.first()->txt;
+    else if( t->tag )
+        typeName = t->tag->txt;
+#endif
+    if( !typeName.isEmpty() )
+        typeName = escape(defix(typeName));
     return typeName;
 }
 
@@ -600,13 +536,13 @@ static void renderModule(const QByteArray& modName)
            << QDateTime::currentDateTime().toString(Qt::ISODate) << endl << endl;
 
     out << "definition " << escape(modName) << " [";
-    if( !prefix.isEmpty() )
-        out << "prefix '" << prefix << "'"; // prefix, the string to be prefixed to proc names to find them in the library
+    if( !prefix2.isEmpty() )
+        out << "prefix '" << prefix2 << "'"; // prefix, the string to be prefixed to proc names to find them in the library
     out << "]" << endl;
 
-    QMap<QByteArray,Decls>::const_iterator i;
+    QMap<QByteArray,Decls2>::const_iterator i;
 
-    for( i = declOrder.begin(); i != declOrder.end(); ++i )
+    for( i = declOrder2.begin(); i != declOrder2.end(); ++i )
     {
         if( i.key() == "<built-in>" )
             continue;
@@ -625,21 +561,45 @@ static void renderModule(const QByteArray& modName)
             out << endl;
 
         QMap<quint32,Type*>::const_iterator k;
+        for( k = i.value().consts2.begin(); k != i.value().consts2.end(); ++k )
+        {
+            for( int j = 0; j < k.value()->consts.size(); j++ )
+            {
+                out << ws(2) << escape(defix(k.value()->consts[j]->name)) << " = ";
+                out << k.value()->consts[j]->enum_val;
+                out << endl;
+            }
+        }
+        if( !i.value().consts2.isEmpty() )
+            out << endl;
+
         bool headerDone = false;
         for( k = i.value().types.begin(); k != i.value().types.end(); ++k )
         {
             Type* t = k.value();
-            //if( !enumTypes.contains(t) && !usedTypes.contains(t) )
-            //    continue;
             if( !headerDone )
             {
                 out << "    type" << endl;
                 headerDone = true;
             }
-            out << ws(2) << escape(defix(getTypeName(t))) << " = ";
+            out << ws(2) << escape(defix(getTypeDeclName(t))) << " = ";
             headerDone = !renderTypeDecl(out,t,3);
             out << endl;
         }
+
+        if( !i.value().alias.isEmpty() )
+        {
+            if( !headerDone )
+            {
+                out << "    type" << endl;
+                headerDone = true;
+            }
+            QMap<quint32,QPair<Token*,Token*> >::const_iterator j;
+            for( j = i.value().alias.begin(); j != i.value().alias.end(); ++j )
+                out << ws(2) << escape(defix(j.value().first->txt)) << " = "
+                    << escape(defix(j.value().second->txt)) << endl;
+        }
+
         if( headerDone )
             out << endl;
 
@@ -655,24 +615,13 @@ static void renderModule(const QByteArray& modName)
         }
     }
 
-    if( !anonymousEnums.isEmpty() )
-    {
-        out << "    // global enum constants" << endl;
-        out << "    const" << endl;
-        foreach( const EnumItem& e, anonymousEnums )
-        {
-            out << ws(2) << escape(defix(e.name)) << " = " << e.value << endl;
-        }
-    }
-
     out << "end " << escape(modName) << endl;
 }
 
-void Transpiler::render(const QByteArray& modName, const QByteArray& _prefix)
+void Transpiler2::render(const QByteArray& modName, const QByteArray& _prefix)
 {
-    prefix = _prefix;
-    processTypes();
-    processFunctions();
+    prefix2 = _prefix;
+    declOrder2.clear();
+    orderDecls();
     renderModule(modName);
 }
-

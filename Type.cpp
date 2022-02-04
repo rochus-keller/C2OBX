@@ -42,18 +42,10 @@ Type * Type::_double = new Type(Type::DOUBLE, 8, 8);
 Type * Type::_ldouble = new Type(Type::LDOUBLE, 16, 16);
 
 
-Type::Type()
+Type::Type(Type::Kind k, int s, int a, bool u):kind(k),size(s),align(a),is_unsigned(u),
+    is_atomic(false),origin(0),base(0),name(0),name_pos(0),array_len(0),vla_len(0),vla_size(0),
+    members(0),is_flexible(0),is_packed(0),return_ty(0),params(0),is_variadic(0),next(0),tag(0),typeName(0)
 {
-    ::memset(this,0,sizeof(Type));
-}
-
-Type::Type(Type::Kind k, int s, int a, bool u)
-{
-    ::memset(this,0,sizeof(Type));
-    kind = k;
-    size = s;
-    align = a;
-    is_unsigned = u;
 }
 
 bool Type::is_integer() const
@@ -224,8 +216,7 @@ Member*Type::get_struct_member(Token* tok) const
         }
 
         // Regular struct member
-        if (mem->name->len == tok->len &&
-                !strncmp(mem->name->loc, tok->loc, tok->len))
+        if( mem->name->txt == tok->txt )
             return mem;
     }
     return NULL;

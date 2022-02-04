@@ -25,9 +25,11 @@
 using namespace C;
 
 
-Node::Node()
+Node::Node():kind(NULL_EXPR),next(0),ty(0),tok(0),lhs(0),rhs(0),cond(0),then(0),els(0),init(0),inc(0),
+    brk_label(0),cont_label(0),body(0),member(0),func_ty(0),args(0),pass_by_stack(0),ret_buffer(0),
+    label(0),unique_label(0),goto_next(0),case_next(0),default_case(0),begin(0),end(0),cas_addr(0),
+    cas_old(0),cas_new(0),atomic_addr(0),atomic_expr(0),var(0),val(0),fval(0)
 {
-    ::memset(this,0,sizeof(Node));
 }
 
 Node*Node::new_cast(Type* ty)

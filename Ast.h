@@ -130,7 +130,7 @@ struct Node {
     long end;
 
     // "asm" string literal
-    const char *asm_str;
+    QByteArray asm_str;
 
     // Atomic compare-and-swap
     Node *cas_addr;

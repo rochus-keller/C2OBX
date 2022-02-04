@@ -11,4 +11,4 @@ Pending:
 
 - [ ] process comments (line and block)
 - [x] consider #DEFINE constants
-- [ ] use original type names for basic types (instead of plain C basic types)
+- [x] use original type names for basic types (instead of plain C basic types)

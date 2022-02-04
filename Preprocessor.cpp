@@ -45,10 +45,7 @@ struct CondIncl {
     enum { IN_THEN, IN_ELIF, IN_ELSE } ctx;
     Token *tok;
     bool included;
-    CondIncl()
-    {
-        ::memset(this,0,sizeof(CondIncl));
-    }
+    CondIncl():next(0),tok(0),included(false) {}
 };
 static CondIncl *cond_incl = 0;
 
@@ -170,7 +167,7 @@ read_macro_args(Token **rest, Token *tok, Macro::Param *params, const QByteArray
 }
 
 static MacroArg *find_arg(MacroArg *args, Token *tok) {
-    const QByteArray name(tok->loc,tok->len);
+    const QByteArray name = tok->txt;
     for (MacroArg *ap = args; ap; ap = ap->next)
         if ( ap->name == name )
             return ap;
@@ -298,7 +295,7 @@ static Token *subst(Token *tok, MacroArg *args) {
 // If tok is a macro, expand it and return true.
 // Otherwise, do nothing and return false.
 static bool expand_macro(Token **rest, Token *tok) {
-    if (tok->hideset->hideset_contains(QByteArray(tok->loc, tok->len)))
+    if (tok->hideset->hideset_contains(tok->txt))
         return false;
 
     Macro *m = Tokenizer::find_macro(tok);
@@ -438,7 +435,7 @@ static QByteArray detect_include_guard(Token *tok) {
     if (tok->kind != Token::IDENT)
         return 0;
 
-    QByteArray macro(tok->loc, tok->len);
+    const QByteArray macro = tok->txt;
     tok = tok->next;
 
     if (!tok->is_hash() || !tok->next->equal("define") || !tok->next->next->equal(macro))
@@ -561,7 +558,7 @@ static Token *preprocess2(Token *tok) {
             tok = tok->next;
             if (tok->kind != Token::IDENT)
                 Tokenizer::error_tok(tok, "macro name must be an identifier");
-            Tokenizer::undef_macro(QByteArray(tok->loc, tok->len));
+            Tokenizer::undef_macro(tok->txt);
             tok = tok->next->skip_line();
             continue;
         }

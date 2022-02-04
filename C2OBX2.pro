@@ -32,7 +32,8 @@ SOURCES += C2OBX.cpp \
     Ast.cpp \
     Preprocessor.cpp \
     Parser.cpp \
-    Transpiler.cpp
+    Transpiler.cpp \
+    Transpiler2.cpp
 
 HEADERS += \
     Tokenizer.h \
@@ -40,4 +41,5 @@ HEADERS += \
     Ast.h \
     Preprocessor.h \
     Parser.h \
-    Transpiler.h
+    Transpiler.h \
+    Transpiler2.h
