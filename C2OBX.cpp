@@ -106,36 +106,36 @@ static void printAllTypeDecls()
     }
 }
 
-int main(int argc, char *argv[])
+static inline QString toAbsolute(const QString& path)
 {
-    QCoreApplication a(argc, argv);
-    a.setOrganizationName("Rochus Keller");
-    a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
-    a.setApplicationName("C2OBX");
-    a.setApplicationVersion("2022-02-02");
+    QFileInfo info(path);
+    if( info.isRelative() )
+    {
+        const QString tmp = info.canonicalFilePath();
+        return tmp;
+    }else
+        return path;
+}
 
+static int readArgs(const QStringList& args, QStringList& files, QByteArray& modName, QByteArray& prefix, QString& optionFile)
+{
     QTextStream out(stdout);
-
-    C::Preprocessor::init_builtins();
-
-    out << "C2OBX version: " << a.applicationVersion() <<
-                 " author: me@rochus-keller.ch  license: GPL" << endl;
-    QStringList files;
-    QByteArray modName, prefix;
-    const QStringList args = QCoreApplication::arguments();
     for( int i = 1; i < args.size(); i++ ) // arg 0 enthaelt Anwendungspfad
     {
+        if( args[i].isEmpty() )
+            continue;
         if(  args[i] == "-h" || args.size() == 1 )
         {
             out << "usage: C2OBX [options] <c header file>" << endl;
             out << "  reads a C header and translates it to an Oberon+ module." << endl;
             out << "options:" << endl;
+            out << "  -f file       load the command line options from file" << endl;
             out << "  -m module     module name" << endl;
             out << "  -p prefix     the prefix to remove" << endl;
             out << "  -Ipath        include path" << endl;
             out << "  -h            display this information" << endl;
             out << "  -Ddefine      add define" << endl;
-            return 0;
+            return 1;
         }else if( args[i] == "-m" )
         {
             if( i+1 < args.size() )
@@ -150,9 +150,16 @@ int main(int argc, char *argv[])
                 prefix = args[i+1].toUtf8();
                 i++;
             }
+        }else if( args[i] == "-f" )
+        {
+            if( i+1 < args.size() )
+            {
+                optionFile = toAbsolute(args[i+1]);
+                i++;
+            }
         }else if( args[i].startsWith("-I") )
         {
-            C::Preprocessor::include_paths.append(args[i].mid(2).toUtf8());
+            C::Preprocessor::include_paths.append(toAbsolute(args[i].mid(2)).toUtf8());
         }
         else if( args[i].startsWith("-D") )
         {
@@ -160,16 +167,64 @@ int main(int argc, char *argv[])
         }
         else if( !args[ i ].startsWith( '-' ) )
         {
-            files += args[ i ];
+            files += toAbsolute(args[ i ]);
         }else
         {
             qCritical() << "error: invalid command line option " << args[i];
             return -1;
         }
     }
+    return 0;
+}
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication a(argc, argv);
+    a.setOrganizationName("Rochus Keller");
+    a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
+    a.setApplicationName("C2OBX");
+    a.setApplicationVersion("2022-02-05");
+
+    QTextStream out(stdout);
+
+    C::Preprocessor::init_builtins();
+
+    out << "C2OBX version: " << a.applicationVersion() <<
+                 " author: me@rochus-keller.ch  license: GPL" << endl;
+    QStringList files;
+    QByteArray modName, prefix;
+    QString optionFile;
+    const QStringList args = QCoreApplication::arguments();
+    const int res = readArgs(args, files, modName, prefix, optionFile);
+    if( res > 0 )
+        return 0;
+    if( res < 0 )
+        return res;
+    if( !optionFile.isEmpty() )
+    {
+        QDir::setCurrent( QFileInfo(optionFile).absolutePath() );
+        QString dummy;
+        QFile in(optionFile);
+        if( !in.open(QIODevice::ReadOnly) )
+        {
+            qCritical() << "error: cannot open options file" << optionFile;
+            return -1;
+        }
+        QStringList options = QString::fromUtf8(in.readAll()).split('\n');
+        for( int i = 0; i < options.size(); i++ )
+            options[i] = options[i].trimmed();
+        options.prepend(QString());
+
+        const int res = readArgs(options, files, modName, prefix, dummy);
+        if( res > 0 )
+            return 0;
+        if( res < 0 )
+            return res;
+    }
     if( files.size() != 1 )
     {
         qCritical() << "error: expecting one header file";
+        return -1;
     }
     QDir::setCurrent( QFileInfo(files.first()).absolutePath() );
     QByteArray base = files.first().toUtf8();

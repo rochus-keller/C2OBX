@@ -33,7 +33,7 @@ using namespace C;
 
 struct Decls2
 {
-    QMap<quint32,Type*> types; // line->Type
+    QMultiMap<quint32,Type*> types; // line->Type
     QMap<quint32,QPair<Token*,Token*> > alias; // line->Name
     QMap<quint32,Obj*> functions; // line->Obj
     QMap<quint32,C::Macro*> consts; // line->Macro
@@ -95,6 +95,21 @@ static inline bool isBaseType(Type* t)
     }
 }
 
+static inline bool isUnstructured(Type* t)
+{
+    if( isBaseType(t) && t->kind != Type::VOID )
+        return true;
+    switch( t->kind )
+    {
+    case Type::ENUM:
+    case Type::PTR:
+    //case Type::FUNC:
+        return true;
+    default:
+        return false;
+    }
+}
+
 static bool renderTypeDecl(QTextStream& out, Type* t, int level );
 
 static QByteArray defix( const QByteArray& name )
@@ -106,7 +121,7 @@ static QByteArray defix( const QByteArray& name )
     return name;
 }
 
-static void renderTypeName( QTextStream& out, Type* t, int level = 0 )
+static void renderTypeName( QTextStream& out, Type* t, int level )
 {
     QByteArray typeName;
     if( t->typeName )
@@ -188,7 +203,7 @@ static inline bool validName( const QByteArray& name )
     return true;
 }
 
-static void renderParams(QTextStream& out, Type* func )
+static void renderParams(QTextStream& out, Type* func, int level)
 {
     Type* p = func->params;
     Type* r = (func->return_ty && func->return_ty->kind != Type::VOID) ? func->return_ty : 0;
@@ -205,7 +220,7 @@ static void renderParams(QTextStream& out, Type* func )
         if( !validName(name) )
             name = "_" + QByteArray::number(nr);
         out << escape(name) << ": ";
-        renderTypeName(out,p);
+        renderTypeName(out,p,level);
         p = p->next;
         nr++;
     }
@@ -215,7 +230,7 @@ static void renderParams(QTextStream& out, Type* func )
     if( r )
     {
         out << ": ";
-        renderTypeName(out,r);
+        renderTypeName(out,r,level+1);
     }
 }
 
@@ -262,13 +277,13 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
                 qCritical() << "pointers like ***type are not supported";
             if( t->base->base->kind == Type::PTR )
                 qCritical() << "pointers like ***type are not supported";
-            if( isBaseType(t->base->base) && t->base->base->kind != Type::VOID )
+            if( isUnstructured(t->base->base) )
             {
                 out << "*[]";
                 renderTypeDecl(out, t->base->base, level );
             }else
                 renderTypeDecl(out, t->base, level );
-        }else if( isBaseType(t->base) && t->base->kind != Type::VOID )
+        }else if( isUnstructured(t->base) )
         {
             out << "*[]";
             renderTypeName(out,t->base,level);
@@ -288,7 +303,7 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
         break;
     case Type::FUNC:
         out << "proc";
-        renderParams(out,t);
+        renderParams(out,t,level);
         break;
     case Type::ENUM:
         return renderEnum(out,t,level);
@@ -301,16 +316,18 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
             else
                 out << "cunion";
             Member* member = t->members;
+            level += 3;
             while( member )
             {
-                out << endl << ws(level+1);
+                out << endl << ws(level);
                 QByteArray name = member->name->txt;
                 if( member->is_bitfield )
                     qWarning() << "bitfields not supported:" << name << renderFilePos(member->name);
                 out << escape(name) << ": ";
-                renderTypeName(out,member->ty );
+                renderTypeName(out,member->ty,level );
                 member = member->next;
             }
+            level -= 3;
             out << " end";
         }
         break;
@@ -321,27 +338,47 @@ static bool renderTypeDecl(QTextStream& out, Type* t, int level )
     return false;
 }
 
+static inline Token* getNameOf(Type* t)
+{
+    Q_ASSERT( t->tag || !t->typedefs.isEmpty() );
+    Token* name = 0;
+    if( !t->typedefs.isEmpty() )
+        name = t->typedefs.first();
+    else
+        name = t->tag;
+    return name;
+}
+
 static void orderDecls()
 {
     foreach( Type* t, Parser::typeDecls )
     {
-        Q_ASSERT( t->tag || !t->typedefs.isEmpty() );
+        if( t->tag == 0 && t->typedefs.isEmpty() )
+            continue;
 
-        Token* name = 0;
-        if( !t->typedefs.isEmpty() )
-            name = t->typedefs.first();
-        else
-            name = t->tag;
+        Token* name = getNameOf(t);
 
+#if 0
         Type* tmp = declOrder2[name->filename].types[name->line_no];
         if( tmp != 0 )
-            qWarning() << "type already registered" << name->txt << renderFilePos(name);
-        else
+        {
+            Token* name2 = getNameOf(tmp);
+            qWarning() << "type already registered" << name->txt << renderFilePos(name)
+                       << "as" << name2->txt << renderFilePos(name2);
+        }else
         {
             declOrder2[name->filename].types[name->line_no] = t;
             for( int i = 1; i < t->typedefs.size(); i++ )
                 declOrder2[t->typedefs[i]->filename].alias[t->typedefs[i]->line_no] = qMakePair(t->typedefs[i],name);
         }
+#else
+        // types is now MultiMap; it happens that there is more than one declaration on the same line, e.g. like
+        // "typedef struct _SDL_iconv_t *SDL_iconv_t;" which is "struct _SDL_iconv_t" and pointer to struct
+
+        declOrder2[name->filename].types.insert(name->line_no,t);
+        for( int i = 1; i < t->typedefs.size(); i++ )
+            declOrder2[t->typedefs[i]->filename].alias[t->typedefs[i]->line_no] = qMakePair(t->typedefs[i],name);
+#endif
     }
 
     foreach( Type* t, Parser::anonymousEnums )
@@ -501,7 +538,10 @@ static QByteArray renderMacro(Token* e)
         Tokenizer::tokenize_errors_cause_exception = true;
         Node* n = Parser::expr_checked(e);
         Tokenizer::tokenize_errors_cause_exception = false;
-        return renderNode(n);
+        if( n && n->kind == Node::VAR && n->var->ty && n->var->ty->kind >= Type::FUNC )
+            return "nil // CHECK " + renderNode(n);
+        else
+            return renderNode(n);
     }catch(...)
     {
         Tokenizer::tokenize_errors_cause_exception = false;
@@ -511,7 +551,7 @@ static QByteArray renderMacro(Token* e)
             str += e->txt;
             e = e->next;
         }
-        return "nil // " + str; // this is apparently not a constant, maybe a define to a type name
+        return "nil // CHECK " + str; // this is apparently not a constant, maybe a define to a type name
     }
     return QByteArray();
 }
@@ -582,7 +622,8 @@ static void renderModule(const QByteArray& modName)
                 out << "    type" << endl;
                 headerDone = true;
             }
-            out << ws(2) << escape(defix(getTypeDeclName(t))) << " = ";
+            const QByteArray name = escape(defix(getTypeDeclName(t)));
+            out << ws(2) << name << " = ";
             headerDone = !renderTypeDecl(out,t,3);
             out << endl;
         }
@@ -608,7 +649,7 @@ static void renderModule(const QByteArray& modName)
         {
             Obj* func = j.value();
             out << "    proc " << escape(defix(func->name));
-            renderParams(out, func->ty);
+            renderParams(out, func->ty, 2);
             if( func->ty->is_variadic )
                 out << " [varargs]";
             out << endl;

@@ -320,7 +320,7 @@ static void push_tag_scope(Token *tok, Type *ty) {
     Parser::scope->tags.insert(tok->txt, ty);
     if( Parser::scope->next == 0 )
     {
-        Q_ASSERT( ty->tag == 0 );
+        Q_ASSERT( ty->tag == 0 || ty->tag == tok );
         ty->tag = tok;
         Parser::typeDecls.insert(ty);
         Parser::anonymousEnums.remove(ty);
@@ -367,6 +367,7 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
     };
 
     Type *ty = Type::_int;
+    ty->typeName = 0;
     int counter = 0;
     bool is_atomic = false;
 
@@ -535,6 +536,7 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
         default:
             Tokenizer::error_tok(tok, "invalid type");
         }
+        ty->typeName = 0;
 
         tok = tok->next;
     }
@@ -2618,12 +2620,17 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
     if (tag && !tok->equal("{")) {
         *rest = tok;
 
+        // it's not a struct Tag {}, just a struct Tag reference
         Type *ty2 = find_tag(tag);
         if (ty2)
+        {
+            ty2->typeName = tag; // we need the typename here so the transpiler recognizes it as an alias to avoid infinite loop
             return ty2;
+        }
 
         ty->size = -1;
         push_tag_scope(tag, ty);
+        ty->typeName = tag; // dito
         return ty;
     }
 
@@ -2638,7 +2645,12 @@ static Type *struct_union_decl(Token **rest, Token *tok) {
         // Otherwise, register the struct type.
         Type *ty2 = Parser::scope->tags.value(tag->txt);
         if (ty2) {
+            if( ty->tag == 0 )
+                ty->tag = ty2->tag;
+            if( ty->typedefs.isEmpty() )
+                ty->typedefs = ty2->typedefs;
             *ty2 = *ty;
+            ty2->tag = tag;
             return ty2;
         }
 
@@ -3059,6 +3071,7 @@ static Token *parse_typedef(Token *tok, Type *basety) {
         Type *ty = declarator(&tok, tok, basety);
         if (!ty->name)
             Tokenizer::error_tok(ty->name_pos, "typedef name omitted");
+
         push_scope(get_ident(ty->name))->typedef_ = ty;
         if( Parser::scope->next == 0 )
         {

@@ -1132,7 +1132,13 @@ void Tokenizer::define_macro(const QByteArray& buf)
         define_macro(parts.first().constData(), parts.last().constData());
         break;
     case 1:
-        define_macro(parts.first(), "1");
+        if( parts.first().contains('(') )
+        {
+            Token *tok = File::new_file("<built-in>", 1, parts.first())->tokenize();
+            if( tok )
+                tok->read_macro_definition(&tok);
+       }else
+            define_macro(parts.first(), "1");
         break;
     default:
         error("invalid define: %s\n",buf.constData());
@@ -1177,7 +1183,7 @@ Token*Token::copy_line(Token** rest) const
     Token head;
     Token *cur = &head;
 
-    for (; !tok->at_bol; tok = tok->next)
+    for (; !tok->at_bol && tok->kind != Token::_EOF; tok = tok->next)
       cur = cur->next = tok->copy_token();
 
     cur->next = tok->new_eof();
