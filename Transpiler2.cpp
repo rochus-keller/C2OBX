@@ -38,6 +38,7 @@ struct Decls2
     QMap<quint32,Obj*> functions; // line->Obj
     QMap<quint32,C::Macro*> consts; // line->Macro
     QMap<quint32,Type*> consts2; // line->anonymous enum
+    QMap<quint32,Obj*> consts3; // line->Obj
 };
 static QMap<QByteArray,Decls2> declOrder2; // file->Decls
 static QByteArray prefix2;
@@ -408,6 +409,14 @@ static void orderDecls()
             declOrder2[m->body->filename].consts[m->body->line_no] = m;
     }
 
+    Obj* vars = Parser::globalVars;
+    while(vars)
+    {
+        if( vars->is_const )
+            declOrder2[vars->tok->filename].consts3[vars->tok->line_no] = vars;
+        vars = vars->next;
+    }
+
     for( int i = 0; i < Parser::funcs.size(); i++ )
     {
         Obj* f = Parser::funcs[i];
@@ -588,7 +597,7 @@ static void renderModule(const QByteArray& modName)
             continue;
         out << endl << "    // from " << QFileInfo(i.key()).fileName() << endl;
 
-        if( !i.value().consts.isEmpty() )
+        if( !i.value().consts.isEmpty() || !i.value().consts2.isEmpty() || !i.value().consts3.isEmpty() )
             out << "    const" << endl;
         QMap<quint32,Macro*>::const_iterator m;
         for( m = i.value().consts.begin(); m != i.value().consts.end(); ++m )
@@ -611,6 +620,14 @@ static void renderModule(const QByteArray& modName)
             }
         }
         if( !i.value().consts2.isEmpty() )
+            out << endl;
+
+        QMap<quint32,Obj*>::const_iterator l;
+        for( l = i.value().consts3.begin(); l != i.value().consts3.end(); ++l )
+        {
+            out << ws(2) << escape(defix(l.value()->nameBuf)) << " = nil // CHECK" << endl;
+        }
+        if( !i.value().consts3.isEmpty() )
             out << endl;
 
         bool headerDone = false;

@@ -183,7 +183,7 @@ int main(int argc, char *argv[])
     a.setOrganizationName("Rochus Keller");
     a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
     a.setApplicationName("C2OBX");
-    a.setApplicationVersion("2022-02-05");
+    a.setApplicationVersion("2022-02-06");
 
     QTextStream out(stdout);
 

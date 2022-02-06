@@ -34,9 +34,10 @@ struct VarAttr {
     bool is_static;
     bool is_extern;
     bool is_inline;
+    bool is_const;
     bool is_tls;
     int align;
-    VarAttr():is_typedef(false),is_static(false),is_extern(false),is_inline(false),is_tls(false),align(0){}
+    VarAttr():is_typedef(false),is_static(false),is_extern(false),is_inline(false),is_tls(false),align(0),is_const(false){}
 } ;
 
 // This struct represents a variable initializer. Since initializers
@@ -393,6 +394,14 @@ static Type *declspec(Token **rest, Token *tok, VarAttr *attr) {
                     attr->is_static + attr->is_extern + attr->is_inline + attr->is_tls > 1)
                 Tokenizer::error_tok(tok, "typedef may not be used together with static,"
                                           " extern, inline, __thread or _Thread_local");
+            tok = tok->next;
+            continue;
+        }
+
+        if( tok->equal("const") )
+        {
+            if( attr )
+                attr->is_const = true;
             tok = tok->next;
             continue;
         }
@@ -3219,6 +3228,8 @@ static Token *global_variable(Token *tok, Type *basety, VarAttr *attr) {
         var->is_definition = !attr->is_extern;
         var->is_static = attr->is_static;
         var->is_tls = attr->is_tls;
+        var->is_const = attr->is_const;
+        var->tok = ty->name;
         if (attr->align)
             var->align = attr->align;
 

@@ -182,6 +182,7 @@ struct Obj {
     bool is_function;
     bool is_definition;
     bool is_static;
+    bool is_const;
 
     // Global variable
     bool is_tentative;
