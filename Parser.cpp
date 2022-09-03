@@ -2598,6 +2598,10 @@ static Token *attribute_list(Token *tok, Type *ty) {
                 continue;
             }
 
+            if (tok->consume(&tok,  "unused")) {
+                continue;
+            }
+
             if (tok->consume(&tok,  "aligned")) {
                 tok = tok->skip("(");
                 ty->align = Parser::const_expr(&tok, tok);

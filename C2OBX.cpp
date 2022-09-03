@@ -117,7 +117,8 @@ static inline QString toAbsolute(const QString& path)
         return path;
 }
 
-static int readArgs(const QStringList& args, QStringList& files, QByteArray& modName, QByteArray& prefix, QString& optionFile)
+static int readArgs(const QStringList& args, QStringList& files, QByteArray& modName,
+                    QByteArray& prefix, QString& optionFile, QString& outFile)
 {
     QTextStream out(stdout);
     for( int i = 1; i < args.size(); i++ ) // arg 0 enthaelt Anwendungspfad
@@ -132,6 +133,7 @@ static int readArgs(const QStringList& args, QStringList& files, QByteArray& mod
             out << "  -f file       load the command line options from file" << endl;
             out << "  -m module     module name" << endl;
             out << "  -p prefix     the prefix to remove" << endl;
+            out << "  -o path       the path where the Oberon+ module is written" << endl;
             out << "  -Ipath        include path" << endl;
             out << "  -h            display this information" << endl;
             out << "  -Ddefine      add define" << endl;
@@ -155,6 +157,13 @@ static int readArgs(const QStringList& args, QStringList& files, QByteArray& mod
             if( i+1 < args.size() )
             {
                 optionFile = toAbsolute(args[i+1]);
+                i++;
+            }
+        }else if( args[i] == "-o" )
+        {
+            if( i+1 < args.size() )
+            {
+                outFile = toAbsolute(args[i+1]);
                 i++;
             }
         }else if( args[i].startsWith("-I") )
@@ -183,7 +192,7 @@ int main(int argc, char *argv[])
     a.setOrganizationName("Rochus Keller");
     a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
     a.setApplicationName("C2OBX");
-    a.setApplicationVersion("2022-02-06");
+    a.setApplicationVersion("2022-09-03");
 
     QTextStream out(stdout);
 
@@ -193,9 +202,9 @@ int main(int argc, char *argv[])
                  " author: me@rochus-keller.ch  license: GPL" << endl;
     QStringList files;
     QByteArray modName, prefix;
-    QString optionFile;
+    QString optionFile, outFile;
     const QStringList args = QCoreApplication::arguments();
-    const int res = readArgs(args, files, modName, prefix, optionFile);
+    const int res = readArgs(args, files, modName, prefix, optionFile, outFile);
     if( res > 0 )
         return 0;
     if( res < 0 )
@@ -215,7 +224,7 @@ int main(int argc, char *argv[])
             options[i] = options[i].trimmed();
         options.prepend(QString());
 
-        const int res = readArgs(options, files, modName, prefix, dummy);
+        const int res = readArgs(options, files, modName, prefix, dummy, outFile);
         if( res > 0 )
             return 0;
         if( res < 0 )
@@ -238,7 +247,7 @@ int main(int argc, char *argv[])
     C::Parser::parse(tok);
     //printAllTypeDecls();
 
-    C::Transpiler2::render(modName, prefix);
+    C::Transpiler2::render(outFile, modName, prefix);
 
     return 0; // a.exec();
 }

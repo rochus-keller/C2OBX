@@ -27,7 +27,7 @@ namespace C
 class Transpiler2
 {
 public:
-    static void render( const QByteArray& modName, const QByteArray& prefix );
+    static void render(const QString& outFilePath, const QByteArray& modName, const QByteArray& prefix );
 private:
     Transpiler2();
 };

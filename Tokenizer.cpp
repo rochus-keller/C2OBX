@@ -905,7 +905,10 @@ static QByteArray read_file(const char *path) {
     } else {
         fp = fopen(path, "r");
         if (!fp)
-            return NULL;
+        {
+            fprintf(stderr,"cannot open file: %s\n",path);
+            exit(1);
+        }
     }
 
     QBuffer buf;

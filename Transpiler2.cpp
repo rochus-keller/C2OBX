@@ -565,14 +565,17 @@ static QByteArray renderMacro(Token* e)
     return QByteArray();
 }
 
-static void renderModule(const QByteArray& modName)
+static void renderModule(const QString& outFilePath, const QByteArray& modName)
 {
     QString name;
     if( !modName.isEmpty() )
         name = modName;
     else
         name = "Module";
-    QFile f(QDir::current().absoluteFilePath(name+".obx"));
+    QString path = outFilePath;
+    if( path.isEmpty() )
+        path = QDir::current().absoluteFilePath(name+".obx");
+    QFile f(path);
     if( !f.open(QIODevice::WriteOnly) )
     {
         qCritical() << "cannot open file for writing:" << f.fileName();
@@ -670,16 +673,17 @@ static void renderModule(const QByteArray& modName)
             if( func->ty->is_variadic )
                 out << " [varargs]";
             out << endl;
+            // TEST qDebug() << i.key() << "\t" << func->name;
         }
     }
 
     out << "end " << escape(modName) << endl;
 }
 
-void Transpiler2::render(const QByteArray& modName, const QByteArray& _prefix)
+void Transpiler2::render(const QString& outFilePath, const QByteArray& modName, const QByteArray& _prefix)
 {
     prefix2 = _prefix;
     declOrder2.clear();
     orderDecls();
-    renderModule(modName);
+    renderModule(outFilePath, modName);
 }
