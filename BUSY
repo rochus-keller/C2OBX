@@ -1,0 +1,18 @@
+
+submod qt = ../LeanQt (HAVE_FILEIO, HAVE_COREAPP)
+
+
+let C2OBX ! : Executable {
+    .configs += [ qt.core_client_config ]
+	.sources += [
+		./C2OBX.cpp
+		./Tokenizer.cpp
+		./Type.cpp
+		./Ast.cpp
+		./Preprocessor.cpp
+		./Parser.cpp
+		./Transpiler.cpp
+		./Transpiler2.cpp
+	]
+	.deps += [ qt.core_sources ]
+}

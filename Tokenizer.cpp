@@ -161,7 +161,7 @@ static bool startswith(const char *p, const char *q) {
 }
 
 static bool in_range(quint32 *range, quint32 c) {
-    for (int i = 0; range[i] != -1; i += 2)
+    for (int i = 0; range[i] != 0xffffffff; i += 2)
         if (range[i] <= c && c <= range[i + 1])
             return true;
     return false;
@@ -192,7 +192,7 @@ bool is_ident1(quint32 c) {
         0x10000, 0x1FFFD, 0x20000, 0x2FFFD, 0x30000, 0x3FFFD, 0x40000, 0x4FFFD,
         0x50000, 0x5FFFD, 0x60000, 0x6FFFD, 0x70000, 0x7FFFD, 0x80000, 0x8FFFD,
         0x90000, 0x9FFFD, 0xA0000, 0xAFFFD, 0xB0000, 0xBFFFD, 0xC0000, 0xCFFFD,
-        0xD0000, 0xDFFFD, 0xE0000, 0xEFFFD, -1,
+        0xD0000, 0xDFFFD, 0xE0000, 0xEFFFD, 0xFFFFFFFF,
     };
 
     return in_range(range, c);
@@ -203,7 +203,7 @@ bool is_ident1(quint32 c) {
 bool is_ident2(quint32 c) {
     static quint32 range[] = {
         '0', '9', '$', '$', 0x0300, 0x036F, 0x1DC0, 0x1DFF, 0x20D0, 0x20FF,
-        0xFE20, 0xFE2F, -1,
+        0xFE20, 0xFE2F, 0xFFFFFFFF,
     };
 
     return is_ident1(c) || in_range(range, c);
