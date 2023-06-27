@@ -295,7 +295,7 @@ static Token *subst(Token *tok, MacroArg *args) {
 // If tok is a macro, expand it and return true.
 // Otherwise, do nothing and return false.
 static bool expand_macro(Token **rest, Token *tok) {
-    if (tok->hideset && tok->hideset->hideset_contains(tok->txt))
+    if (Hideset::hideset_contains(tok->hideset, tok->txt))
         return false;
 
     Macro *m = Tokenizer::find_macro(tok);
@@ -311,7 +311,7 @@ static bool expand_macro(Token **rest, Token *tok) {
 
     // Object-like macro application
     if (m->is_objlike) {
-        Hideset *hs = tok->hideset->hideset_union(new Hideset(m->name));
+        Hideset *hs = Hideset::hideset_union(tok->hideset, new Hideset(m->name));
         Token *body = m->body->add_hideset(hs);
         for (Token *t = body; t->kind != Token::_EOF; t = t->next)
             t->origin = tok;
@@ -336,8 +336,8 @@ static bool expand_macro(Token **rest, Token *tok) {
     // for the new tokens should be. We take the interesection of the
     // macro token and the closing parenthesis and use it as a new hideset
     // as explained in the Dave Prossor's algorithm.
-    Hideset *hs = macro_token->hideset->hideset_intersection(rparen->hideset);
-    hs = hs->hideset_union(new Hideset(m->name));
+    Hideset *hs = Hideset::hideset_intersection(macro_token->hideset, rparen->hideset);
+    hs = Hideset::hideset_union(hs, new Hideset(m->name));
 
     Token *body = subst(m->body, args);
     body = body->add_hideset(hs);

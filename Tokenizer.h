@@ -135,9 +135,9 @@ struct Hideset
     Hideset *next;
     QByteArray name;
     Hideset(const QByteArray& n = QByteArray()):next(0),name(n){}
-    Hideset *hideset_union(Hideset *hs2) const; // this: hs1
-    bool hideset_contains(const QByteArray& name) const;
-    Hideset *hideset_intersection(Hideset *hs2) const; // this: hs1
+    static Hideset *hideset_union(Hideset* hs1, Hideset *hs2);
+    static bool hideset_contains(Hideset* hs,const QByteArray& name);
+    static Hideset *hideset_intersection(Hideset *hs1, Hideset *hs2);
 };
 
 class Tokenizer

@@ -1316,7 +1316,7 @@ Token*Token::add_hideset(Hideset* hs) const
 
     for (; tok; tok = tok->next) {
         Token *t = tok->copy_token();
-        t->hideset = t->hideset->hideset_union(hs);
+        t->hideset = Hideset::hideset_union(t->hideset, hs);
         cur = cur->next = t;
     }
     return head.next;
@@ -1361,9 +1361,8 @@ Macro::Param * Macro::read_macro_params(Token** rest, Token* tok, QByteArray& va
     return head.next;
 }
 
-Hideset*Hideset::hideset_union(Hideset* hs2) const
+Hideset*Hideset::hideset_union(Hideset *hs1, Hideset* hs2)
 {
-    Hideset* hs1 = const_cast<Hideset*>(this);
     Hideset head;
     Hideset *cur = &head;
 
@@ -1373,23 +1372,21 @@ Hideset*Hideset::hideset_union(Hideset* hs2) const
     return head.next;
 }
 
-bool Hideset::hideset_contains(const QByteArray& name) const
+bool Hideset::hideset_contains(Hideset* hs, const QByteArray& name)
 {
-    Hideset* hs = const_cast<Hideset*>(this);
     for (; hs; hs = hs->next)
         if (hs->name == name)
             return true;
     return false;
 }
 
-Hideset*Hideset::hideset_intersection(Hideset* hs2) const
+Hideset*Hideset::hideset_intersection(Hideset* hs1, Hideset* hs2)
 {
-    Hideset* hs1 = const_cast<Hideset*>(this);
     Hideset head;
     Hideset *cur = &head;
 
     for (; hs1; hs1 = hs1->next)
-      if (hs2->hideset_contains(hs1->name))
+      if (hideset_contains(hs2, hs1->name))
         cur = cur->next = new Hideset(hs1->name);
     return head.next;
 }
