@@ -295,7 +295,7 @@ static Token *subst(Token *tok, MacroArg *args) {
 // If tok is a macro, expand it and return true.
 // Otherwise, do nothing and return false.
 static bool expand_macro(Token **rest, Token *tok) {
-    if (tok->hideset->hideset_contains(tok->txt))
+    if (tok->hideset && tok->hideset->hideset_contains(tok->txt))
         return false;
 
     Macro *m = Tokenizer::find_macro(tok);
