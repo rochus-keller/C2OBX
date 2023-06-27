@@ -15,4 +15,7 @@ let C2OBX ! : Executable {
 		./Transpiler2.cpp
 	]
 	.deps += [ qt.core_sources ]
+    if target_toolchain == `gcc {
+        .cflags += [ "-Wall" "-Wno-unused-parameter" "-Wno-unused-function" "-Wno-reorder" "-Wno-switch" ]
+    }
 }

@@ -139,7 +139,7 @@ static Node *new_add(Node *lhs, Node *rhs, Token *tok);
 static Node *new_sub(Node *lhs, Node *rhs, Token *tok);
 static Node *mul(Token **rest, Token *tok);
 static Node *cast(Token **rest, Token *tok);
-static Member *get_struct_member(Type *ty, Token *tok);
+//static Member *get_struct_member(Type *ty, Token *tok);
 static Type *struct_decl(Token **rest, Token *tok);
 static Type *union_decl(Token **rest, Token *tok);
 static Node *postfix(Token **rest, Token *tok);
@@ -1003,6 +1003,7 @@ static Member *struct_designator(Token **rest, Token *tok, Type *ty) {
     }
 
     Tokenizer::error_tok(tok, "struct has no such member");
+    return 0;
 }
 
 // designation = ("[" const-expr "]" | "." ident)* "="? initializer
@@ -1382,6 +1383,7 @@ static quint64 read_buf(char *buf, int sz) {
     if (sz == 8)
         return *(quint64 *)buf;
     Q_ASSERT(false);
+    return 0;
 }
 
 static void write_buf(char *buf, quint64 val, int sz) {
@@ -1483,7 +1485,7 @@ static bool is_typename(Token *tok) {
     static QSet<QByteArray> map;
 
     if (map.isEmpty()) {
-        static char *kw[] = {
+        static const char *kw[] = {
             "void", "_Bool", "char", "short", "int", "long", "struct", "union",
             "typedef", "enum", "static", "extern", "_Alignas", "signed", "unsigned",
             "const", "volatile", "auto", "register", "restrict", "__restrict",
@@ -1491,7 +1493,7 @@ static bool is_typename(Token *tok) {
             "_Thread_local", "__thread", "_Atomic",
         };
 
-        for (int i = 0; i < sizeof(kw) / sizeof(*kw); i++)
+        for (size_t i = 0; i < sizeof(kw) / sizeof(*kw); i++)
             map.insert(kw[i]);
     }
 
@@ -1861,11 +1863,11 @@ static qint64 eval2(Node *node, const char ***label) {
         return eval(node->lhs) != eval(node->rhs);
     case Node::LT:
         if (node->lhs->ty->is_unsigned)
-            return (quint64)eval(node->lhs) < eval(node->rhs);
+            return (quint64)(eval(node->lhs) < eval(node->rhs));
         return eval(node->lhs) < eval(node->rhs);
     case Node::LE:
         if (node->lhs->ty->is_unsigned)
-            return (quint64)eval(node->lhs) <= eval(node->rhs);
+            return (quint64)(eval(node->lhs) <= eval(node->rhs));
         return eval(node->lhs) <= eval(node->rhs);
     case Node::COND:
         return eval(node->cond) ? eval2(node->then, label) : eval2(node->els, label);
@@ -1913,6 +1915,7 @@ static qint64 eval2(Node *node, const char ***label) {
     }
 
     Tokenizer::error_tok(node->tok, "not a compile-time constant");
+    return 0;
 }
 
 static qint64 eval_rval(Node *node, const char ***label) {
@@ -1929,6 +1932,7 @@ static qint64 eval_rval(Node *node, const char ***label) {
     }
 
     Tokenizer::error_tok(node->tok, "invalid initializer");
+    return 0;
 }
 
 static bool is_const_expr(Node *node) {
@@ -2007,6 +2011,7 @@ static double eval_double(Node *node) {
     }
 
     Tokenizer::error_tok(node->tok, "not a compile-time constant");
+    return 0.0;
 }
 
 // Convert op= operators to expressions containing an assignment.
@@ -2396,6 +2401,7 @@ static Node *new_sub(Node *lhs, Node *rhs, Token *tok) {
     }
 
     Tokenizer::error_tok(tok, "invalid operands");
+    return 0;
 }
 
 // add = mul ("+" mul | "-" mul)*
@@ -3071,6 +3077,7 @@ static Node *primary(Token **rest, Token *tok) {
     }
 
     Tokenizer::error_tok(tok, "expected an expression");
+    return 0;
 }
 
 static Token *parse_typedef(Token *tok, Type *basety) {

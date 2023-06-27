@@ -43,3 +43,6 @@ HEADERS += \
     Parser.h \
     Transpiler.h \
     Transpiler2.h
+
+QMAKE_CXXFLAGS += "-Wno-unused-parameter" "-Wno-unused-function" "-Wno-reorder" "-Wno-switch"
+

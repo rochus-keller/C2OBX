@@ -418,6 +418,7 @@ static QByteArray read_include_filename(Token **rest, Token *tok, bool *is_dquot
     }
 
     Tokenizer::error_tok(tok, "expected a filename");
+    return QByteArray();
 }
 
 // Detect the following "include guard" pattern.
@@ -801,6 +802,7 @@ static StringKind getStringKind(Token *tok) {
     case 'L': return STR_WIDE;
     }
     Q_ASSERT(false);
+    return STR_NONE;
 }
 
 // Concatenate adjacent string literals into a single string literal

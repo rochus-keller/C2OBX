@@ -107,8 +107,8 @@ void Tokenizer::warn_tok(const Token* tok, const char* fmt, ...)
     va_end(ap);
 }
 
-Token::Token():kind(IDENT),next(0),val(0),fval(0),ty(0),file(0),line_no(0),line_delta(0),
-    at_bol(false),has_space(false),hideset(0),origin(0),loc(0),len(0)
+Token::Token():kind(IDENT),next(0),val(0),fval(0),loc(0),len(0),ty(0),file(0),line_no(0),line_delta(0),
+    at_bol(false),has_space(false),hideset(0),origin(0)
 {
 }
 
@@ -224,8 +224,8 @@ static quint32 decode_utf8(const char **new_pos, const char *p)
     }
 
     const char *start = p;
-    int len;
-    quint32 c;
+    int len = 0;
+    quint32 c = 0;
 
     if ((unsigned char)*p >= 0b11110000) {
         len = 4;
@@ -277,13 +277,13 @@ static int from_hex(char c) {
 
 // Read a punctuator token from p and returns its length.
 static int read_punct(const char *p) {
-    static char *kw[] = {
+    static const char *kw[] = {
         "<<=", ">>=", "...", "==", "!=", "<=", ">=", "->", "+=",
         "-=", "*=", "/=", "++", "--", "%=", "&=", "|=", "^=", "&&",
         "||", "<<", ">>", "##",
     };
 
-    for (int i = 0; i < sizeof(kw) / sizeof(*kw); i++)
+    for (size_t i = 0; i < sizeof(kw) / sizeof(*kw); i++)
         if (startswith(p, kw[i]))
             return strlen(kw[i]);
 
@@ -306,7 +306,7 @@ bool Token::is_keyword() const
             "__attribute__",
         };
 
-        for (int i = 0; i < sizeof(kw) / sizeof(*kw); i++)
+        for (size_t i = 0; i < sizeof(kw) / sizeof(*kw); i++)
             map.insert(kw[i]);
     }
 
@@ -1322,7 +1322,7 @@ Token*Token::add_hideset(Hideset* hs) const
     return head.next;
 }
 
-Macro::Macro():is_objlike(false),body(0),handler(0),params(0)
+Macro::Macro():is_objlike(false),params(0),body(0),handler(0)
 {
 
 }
