@@ -3046,7 +3046,14 @@ static Node *primary(Token **rest, Token *tok) {
 
         if (sc) {
             if (sc->obj)
+            {
+                if (current_fn)
+                {
+                    current_fn->uses.insert(sc->obj); // TODO: optional
+                    sc->obj->usedBy.insert(current_fn);
+                }
                 return Node::new_var_node(sc->obj, tok);
+            }
             if (sc->enum_ty)
                 return Node::new_num(sc->enum_val, tok);
         }
@@ -3157,6 +3164,7 @@ static void mark_live(Obj *var) {
 }
 
 static Token *function(Token *tok, Type *basety, VarAttr *attr) {
+    Token* ident = tok;
     Type *ty = declarator(&tok, tok, basety);
     if (!ty->name)
         Tokenizer::error_tok(ty->name_pos, "function name omitted");
@@ -3183,6 +3191,8 @@ static Token *function(Token *tok, Type *basety, VarAttr *attr) {
     }
 
     fn->is_root = !(fn->is_static && fn->is_inline);
+    if( fn->is_definition )
+        fn->definitionTok = ident;
 
     if (tok->consume(&tok,  ";"))
         return tok;

@@ -23,6 +23,7 @@
 
 #include <QString>
 #include <QList>
+#include <QSet>
 
 namespace C
 {
@@ -183,6 +184,7 @@ struct Obj {
     bool is_definition;
     bool is_static;
     bool is_const;
+    Token* definitionTok;
 
     // Global variable
     bool is_tentative;
@@ -204,7 +206,14 @@ struct Obj {
     bool is_root;
     QList<QByteArray> refs;
 
+    QSet<Obj*> uses, usedBy;   // symbols used by the function
+    QSet<Type*> usesT; // structured types used by the function or global (in params or locals)
+    int rank; // rank of the symbol in the dependency tree
+
+    void collectTypes();
+
     Obj();
+    ~Obj();
 };
 
 struct Relocation {

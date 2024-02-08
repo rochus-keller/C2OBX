@@ -31,6 +31,7 @@ struct Token;
 class Preprocessor
 {
 public:
+    static void setIgnoreMissingIncludes(bool on);
     static QList<QByteArray> include_paths;
     static QByteArray base_file;
     static QByteArray search_include_paths(QByteArray filename);

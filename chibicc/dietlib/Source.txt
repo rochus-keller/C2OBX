@@ -1,0 +1,10 @@
+dietlibc 0.34
+
+Downloaded from https://www.fefe.de/dietlibc/
+on 06.02.2024 
+
+
+had to define __INTPTR_TYPE__ and __UINTPTR_TYPE__ 
+did so directly in inttypes.h
+
+had also to define __i386__  on the command line

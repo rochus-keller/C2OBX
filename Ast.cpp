@@ -280,9 +280,33 @@ Node *Node::new_vla_ptr(Obj *var, Token *tok) {
     return node;
 }
 
+static void _collectTypes(QSet<C::Type*>& res, C::Obj* obj)
+{
+    if( obj == 0 )
+        return;
+    C::Type* t = obj->ty;
+    if( t && t->kind == C::Type::ARRAY )
+        t = t->base;
+    if( t && t->kind == C::Type::PTR )
+        t = t->base;
+    if( t && (t->kind == C::Type::STRUCT || t->kind == C::Type::TUNION) )
+        res.insert(t);
+    _collectTypes(res,obj->next);
+}
+
+void Obj::collectTypes()
+{
+    _collectTypes(usesT,params);
+    _collectTypes(usesT,locals);
+}
+
 Obj::Obj():next(0),ty(0),tok(0),is_local(false),align(0),offset(0),is_function(false),is_definition(false),
     is_static(false),is_tentative(false),is_tls(false),rel(0),is_inline(false),params(0),body(0),
-    locals(0),va_area(0),alloca_bottom(0),stack_size(0),is_live(false),is_root(false),name(0),is_const(false)
+    locals(0),va_area(0),alloca_bottom(0),stack_size(0),is_live(false),is_root(false),name(0),is_const(false),rank(0)
+{
+}
+
+Obj::~Obj()
 {
 }
 

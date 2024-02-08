@@ -57,6 +57,7 @@ struct Type
     bool is_unsigned;   // unsigned or signed
     bool is_atomic;     // true if _Atomic
     Type *origin;       // for type compatibility check
+    int rank;           // rank of the type in the symbol dependency tree
 
     // Pointer-to or array-of type. We intentionally use the same member
     // to represent pointer/array duality in C.

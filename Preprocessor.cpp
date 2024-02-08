@@ -30,6 +30,13 @@
 using namespace C;
 
 static QSet<QByteArray> pragma_once;
+static bool _ignoreMissingIncludes = false;
+
+void Preprocessor::setIgnoreMissingIncludes(bool on)
+{
+    _ignoreMissingIncludes = on;
+}
+
 
 struct MacroArg {
     MacroArg *next;
@@ -473,6 +480,15 @@ static Token *include_file(Token *tok, const char *path, Token *filename_tok) {
     if (!guard_name.isEmpty() && Tokenizer::macros.contains(guard_name))
         return tok;
 
+    if( _ignoreMissingIncludes )
+    {
+        QFileInfo info(path);
+        if( !info.exists() )
+        {
+            Tokenizer::warn_tok(filename_tok, "cannot open file: %s", path);
+            return tok;
+        }
+    }
     Token *tok2 = Tokenizer::tokenize(path);
     if (!tok2)
         Tokenizer::error_tok(filename_tok, "%s: cannot open file", path);
