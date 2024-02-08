@@ -47,7 +47,7 @@ static inline QString toAbsolute(const QString& path)
 }
 
 static int readArgs(const QStringList& args, QStringList& files, QString& optionFile, QString& outFile,
-                    bool& onlyMainDeps, bool& clustered, bool& clusterByStatics, bool& haveStructs)
+                    bool& haveDot, bool& onlyMainDeps, bool& clustered, bool& clusterByStatics, bool& haveStructs)
 {
     QTextStream out(stdout);
     for( int i = 1; i < args.size(); i++ ) // arg 0 enthaelt Anwendungspfad
@@ -66,6 +66,8 @@ static int readArgs(const QStringList& args, QStringList& files, QString& option
             out << "  -main         only deps of main" << endl;
             out << "  -fg           group by file" << endl;
             out << "  -st           show structured types" << endl;
+            out << "  -o path       name and path of output file" << endl;
+            out << "  -dot          generate dot file" << endl;
             return 1;
         }else if( args[i] == "-f" )
         {
@@ -87,6 +89,8 @@ static int readArgs(const QStringList& args, QStringList& files, QString& option
             clustered = true;
         else if( args[i] == "-st" )
             haveStructs = true;
+        else if( args[i] == "-dot" )
+            haveDot = true;
         else if( args[i].startsWith("-I") )
         {
             C::Preprocessor::include_paths.append(toAbsolute(args[i].mid(2)).toUtf8());
@@ -338,26 +342,45 @@ static void printDependencyGraph(const QSet<QString>& paths, const QString& file
 
 static int calcRanks( QSet<C::Obj*>& guard, C::Obj* obj)
 {
-    if( guard.contains(obj) )
+    if( !obj->is_definition || obj->definitionTok == 0 )
         return 0;
+    if( guard.contains(obj) )
+    {
+        obj->recursive = true;
+        return 0;
+    }
     guard.insert(obj);
-    int rank = obj->rank;
+
+    const int rank = obj->rank;
+
+
+    int depth = rank+1;
     foreach( C::Obj* o, obj->uses )
     {
-        if( !o->is_function )
+        if( !o->is_definition )
             continue;
-        if( o->rank < obj->rank + 1 )
-            o->rank = obj->rank + 1;
-        const int res = calcRanks(guard,o);
-        if( res > rank )
-            rank = res;
+        if( o->rank < rank+1 )
+        {
+            o->rank = rank+1;
+            const int res = calcRanks(guard,o);
+            if( res > depth )
+                depth = res;
+        }
     }
     foreach( C::Type* t, obj->usesT )
     {
-        if( t->rank < obj->rank )
-            t->rank = obj->rank;
+        if( t->rank < rank )
+            t->rank = rank;
     }
-    return rank;
+
+#if 0
+    //if( !obj->is_static )
+    qDebug() << obj->nameBuf << (obj->is_static ? " [S]":"" ) << "\t" << obj->rank << "\t"
+             << QFileInfo(obj->definitionTok->filename).fileName() << "\t"
+             << obj->definitionTok->line_no << "\t" << (obj->recursive?"recursive":"");
+#endif
+
+    return depth;
 }
 
 static int calcRanks(const QSet<QString>& paths, bool onlyMainDeps)
@@ -373,9 +396,13 @@ static int calcRanks(const QSet<QString>& paths, bool onlyMainDeps)
             if( paths.contains(fi.absolutePath()) )
             {
                 func->collectTypes();
-                if( (onlyMainDeps && func->nameBuf == "main") ||
+                if( (onlyMainDeps && !func->is_static && func->nameBuf == "main") ||
                         (!onlyMainDeps && func->usedBy.isEmpty()) )
+                {
                     roots << func;
+                    if( onlyMainDeps )
+                        break;
+                }
             }
         }
     }
@@ -397,7 +424,7 @@ int main(int argc, char *argv[])
     a.setOrganizationName("Rochus Keller");
     a.setOrganizationDomain("https://github.com/rochus-keller/C2OBX");
     a.setApplicationName("C2OBX");
-    a.setApplicationVersion("2024-02-07");
+    a.setApplicationVersion("2024-02-08");
 
     QTextStream out(stdout);
 
@@ -407,9 +434,9 @@ int main(int argc, char *argv[])
                  " author: me@rochus-keller.ch  license: GPL" << endl;
     QStringList files;
     QString optionFile, outFile;
-    bool onlyMainDeps = false, clustered = false, clusterByStatics = false, haveStructs = false;
+    bool onlyMainDeps = false, clustered = false, clusterByStatics = false, haveStructs = false, haveDot = false;
     const QStringList args = QCoreApplication::arguments();
-    const int res = readArgs(args, files, optionFile, outFile, onlyMainDeps, clustered, clusterByStatics, haveStructs);
+    const int res = readArgs(args, files, optionFile, outFile, haveDot, onlyMainDeps, clustered, clusterByStatics, haveStructs);
     if( res > 0 )
         return 0;
     if( res < 0 )
@@ -429,7 +456,7 @@ int main(int argc, char *argv[])
             options[i] = options[i].trimmed();
         options.prepend(QString());
 
-        const int res = readArgs(options, files, dummy, outFile, onlyMainDeps, clustered, clusterByStatics, haveStructs);
+        const int res = readArgs(options, files, dummy, outFile, haveDot, onlyMainDeps, clustered, clusterByStatics, haveStructs);
         if( res > 0 )
             return 0;
         if( res < 0 )
@@ -451,8 +478,79 @@ int main(int argc, char *argv[])
         C::Parser::parse(tok);
     }
     //printAllFuncs(paths);
-    printDependencyGraph(paths,"graph.dot", onlyMainDeps, clustered, clusterByStatics, haveStructs);
-    // TODO: evaluation const int rank = calcRanks(paths, onlyMainDeps);
+    QString path;
+    if( haveDot )
+    {
+        path = "graph.dot";
+        if( !outFile.isEmpty() )
+            path = outFile;
+        printDependencyGraph(paths,path, onlyMainDeps, clustered, clusterByStatics, haveStructs);
+    }else
+    {
+        path = "table.csv";
+        if( !outFile.isEmpty() )
+            path = outFile;
+        const int rank = calcRanks(paths, onlyMainDeps);
+        QVector<QStringList> types(rank+1);
+        QHash<C::File*,QVector<QStringList> > funcs;
+        for( int i = 0; i < C::Parser::funcs.size(); i++ )
+        {
+            C::Obj* func = C::Parser::funcs[i];
+            if( !func->is_definition || func->definitionTok == 0 )
+                continue;
+            // function body
+            QFileInfo fi(func->definitionTok->filename);
+            if( !paths.contains(fi.absolutePath()) )
+                continue;
+            QVector<QStringList>& fl = funcs[func->definitionTok->file];
+            if( fl.isEmpty() )
+                fl.resize(rank+1);
+            QString stat;
+            if( func->is_static )
+                stat = ":S";
+            fl[func->rank].append(QString("%1%3:%2").arg(func->name).arg(func->definitionTok->line_no).arg(stat));
+            foreach(C::Type* t, func->usesT)
+            {
+                int r = t->rank;
+                if( r >= types.size() )
+                    r = types.size() - 1;
+                if( t->typeName )
+                    types[r].append(t->typeName->txt);
+            }
+        }
+        QFile f(path);
+        if( !f.open(QIODevice::WriteOnly) )
+        {
+            qCritical() << "cannot open file for writing" << path;
+            return -1;
+        }
+        QTextStream out(&f);
+
+        out << "Rank";
+        for( int i = 0; i < types.size(); i++ )
+            out << "," << i;
+        out << endl;
+
+        out << "Types";
+        for( int i = 0; i < types.size(); i++ )
+        {
+            out << ",";
+            foreach( const QString& s, types[i].toSet())
+                out << " " << s;
+        }
+        out << endl;
+
+        QHash<C::File*,QVector<QStringList> >::const_iterator j;
+        for( j = funcs.begin(); j != funcs.end(); ++j )
+        {
+            out << QFileInfo(j.key()->name).fileName();
+            for( int i = 0; i < j.value().size(); i++ )
+            {
+                out << "," << j.value()[i].join(' ');
+            }
+            out << endl;
+        }
+    }
 
     return 0; // a.exec();
 }

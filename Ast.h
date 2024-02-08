@@ -208,7 +208,8 @@ struct Obj {
 
     QSet<Obj*> uses, usedBy;   // symbols used by the function
     QSet<Type*> usesT; // structured types used by the function or global (in params or locals)
-    int rank; // rank of the symbol in the dependency tree
+    quint16 rank; // rank of the symbol in the dependency tree
+    bool recursive;
 
     void collectTypes();
 
